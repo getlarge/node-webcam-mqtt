@@ -12,6 +12,7 @@
 #include <WiFiManager.h> 
 #include <WiFiClientSecure.h> 
 #include <PubSubClient.h>
+#include <rBase64.h>
 #include <TimeLib.h>
 #include <Ticker.h>
 #include <Bounce2.h>
@@ -40,7 +41,7 @@ PubSubClient mqttClient(MqttWifiClient);
 ArduCAM myCAM(OV2640, CS);
 Bounce debouncer = Bounce();
 Ticker ticker;
-time_t prevDisplay = 0; // when the digital clock was displayed
+rBase64generic<2048> base64;
 
 void tick();
 void setPins();
@@ -55,6 +56,7 @@ void getUpdated();
 void setPinsRebootUart();
 void saveConfigCallback();
 time_t getNtpTime();
+time_t prevDisplay = 0; // when the digital clock was displayed
 void digitalClockDisplay();
 void printDigits(int digits);
 void sendNTPpacket(IPAddress &address);
@@ -69,7 +71,6 @@ void setFPM(int interv);
 void updateResolutionFile();
 void updateFPMFile();
 void checkConfig();
-
 void configManager();
 void mqttInit();
 boolean mqttConnect();
@@ -132,7 +133,6 @@ void before() {
 }
 
 void setup() {
-
   Serial.begin(BAUD_RATE);
 #if DEBUG == 0
   Serial.setDebugOutput(false);
@@ -241,7 +241,6 @@ void loop() {
       mqttClient.loop();
   }
     
-
  if ( WiFi.status() != WL_CONNECTED) { // WiFiMulti.run() != WL_CONNECTED
     ticker.attach(0.1, tick);
     ++wifiFailCount;
@@ -251,5 +250,4 @@ void loop() {
     }  
   //checkButton();
   }
-  
 }

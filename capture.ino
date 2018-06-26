@@ -94,14 +94,17 @@ void camCapture(ArduCAM myCAM){
         if (!client.connected()) break;
         client.write(&buffer[0], will_copy);
       #endif
-      mqttClient.publish(mqttTopicOut, &buffer[0], will_copy);
+      if ( base64.encode(&buffer[0], will_copy) == RBASE64_STATUS_OK) {
+         //Serial.println(base64.result());
+         mqttClient.publish(mqttTopicOut, base64.result(), sizeof(base64.result()));
+      }
+      //mqttClient.publish(mqttTopicOut, &buffer[0], will_copy);
       len -= will_copy;
       #if DEBUG_PAYLOAD == 1
         Serial.print(F("Publish buffer: "));
         Serial.write((const uint8_t *)&buffer[0], sizeof(will_copy));
         Serial.write(&buffer[0], will_copy);
       #endif
-      //return;
     }
   //if (!mqttClient.connected()) break;
   mqttClient.publish(mqttTopicOut, "eof");
@@ -155,6 +158,7 @@ void serverCapture(){
   // pos = pos +1
 // }
 // }
+
 void serverStream(){
   #if WEB_SERVER == 1
     WiFiClient client = server.client();

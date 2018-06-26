@@ -1,4 +1,4 @@
-# NODE WEBCAM
+# NODE WEBCAM MQTT
 
 ## Requirements
 
@@ -6,22 +6,15 @@ Arduino IDE - download the latest from arduino
 
 - https://www.arduino.cc/en/Main/Software
 
-Packages for ESP8266 and ArduCAM development on Arduino IDE
+Packages for ESP8266
 
-- http://www.arducam.com/downloads/ESP8266_UNO/package_ArduCAM_index.json
+- Enter `http://arduino.esp8266.com/stable/package_esp8266com_index.json` into Additional Board Manager URLs field. 
 
-following libraries are required :
-
-- ArduCAM
-- ArduinoJson
-- FS
-- Pubsubclient
-- WifiManager
 
 ## Installation
 
 ```
-git clone https://github/getlarge/NodeWebcam.git
+git clone https://github/getlarge/node-webcam-mqtt.git
 ```
 
 Edit Arduino/libraries/ArduCAM/memorysaver.h to :
@@ -30,19 +23,19 @@ Edit Arduino/libraries/ArduCAM/memorysaver.h to :
 #define OV2640_MINI_2MP
 ```
 
-Then in `config.h` file you may edit the following :
+Edit Arduino/libraries/PubSubClient/src/PubSubClient.h to :
 
-- Protect the acces point
 ```
-char ap_pass[30]="yourpassword",
+#define MQTT_MAX_PACKET_SIZE 4096
 ```
 
 ## Usage
 
 - Open any .ino file of the folder with Arduino IDE
-- Edit your preferences
-- Set resetConfig to true, to make FS format and wifiManager resetting
+- Edit your preferences in `config.h`
 - Upload the code on your ESP8266 board
+- Configure the board via the Access Point
+- Set resetConfig to true, to restore default state at reset
 
 ## Reference
 
@@ -58,6 +51,3 @@ char ap_pass[30]="yourpassword",
 - 8 = 1600x1200
 
 
-## Dev
-
-Go to the dev branch for the latest and unstable development
