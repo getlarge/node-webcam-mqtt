@@ -41,42 +41,40 @@ PubSubClient mqttClient(MqttWifiClient);
 ArduCAM myCAM(OV2640, CS);
 Bounce debouncer = Bounce();
 Ticker ticker;
-rBase64generic<2048> base64;
+//rBase64generic<2048> base64;
+rBase64generic<bufferSize> base64;
 
 void tick();
 void setPins();
 void setReboot();
 void setDefault();
-void checkButton();
-void getDeviceId();
-void checkOtaFile();
-void updateOtaFile();
+void checkState();
+void checkFile(const String fileName, int value);
+void updateFile(const String fileName, int value);
+void checkButton(int e);
+char* getDeviceId();
+void getUpdated(int which, const char* url, const char* fingerprint);
 void connectWifi();
-void getUpdated();
 void setPinsRebootUart();
 void saveConfigCallback();
+void configManager();
+void arducamInit();
+void serverCapture();
+void serverStream();
+void setCamResolution(int reso);
+void setFPM(int interv);
+void mqttInit();
+void mqttError();
+boolean mqttConnect();
+void mqttCallback(char* topic, byte* payload, unsigned int length);
+#if WEB_SERVER == 1
+  void handleNotFound();
+#endif
 time_t getNtpTime();
 time_t prevDisplay = 0; // when the digital clock was displayed
 void digitalClockDisplay();
 void printDigits(int digits);
 void sendNTPpacket(IPAddress &address);
-
-void arducamInit();
-void serverCapture();
-void serverStream();
-void handleNotFound();
-//void sendPic(int len);
-void setCamResolution(int reso);
-void setFPM(int interv);
-void updateResolutionFile();
-void updateFPMFile();
-void checkConfig();
-void configManager();
-void mqttInit();
-boolean mqttConnect();
-bool mqttReconnect();
-void mqttCallback(char* topic, byte* payload, unsigned int length);
-
 
 void before() {
   Serial.println();
@@ -84,7 +82,6 @@ void before() {
   if (SPIFFS.begin()) {
     Serial.println(F("mounted file system"));
     if (SPIFFS.exists("/config.json")) {
-      //file exists, reading and loading
       Serial.println(F("reading config file"));
       File configFile = SPIFFS.open("/config.json", "r");
       if (configFile) {
@@ -99,30 +96,22 @@ void before() {
           Serial.println(F("Failed to load json config"));
         }
         JsonObject& json = doc.as<JsonObject>();
-        strcpy(mqtt_server, json["mqtt_server"]);
-        strcpy(mqtt_port, json["mqtt_port"]);
-        strcpy(mqtt_client_id, json["mqtt_client_id"]);
-        strcpy(mqtt_user, json["mqtt_user"]);
-        strcpy(mqtt_password, json["mqtt_password"]);
-        strcpy(http_server, json["http_server"]);
-        strcpy(http_port, json["http_port"]);
-        strcpy(mqtt_topic_in,mqtt_client_id); 
-        strcat(mqtt_topic_in,in); 
-        strcpy(mqtt_topic_out,mqtt_client_id);
-        strcat(mqtt_topic_out,out);
-        strcpy(post_destination,post_prefix);
-        strcat(post_destination,mqtt_client_id); 
-        mqttServer = mqtt_server;
-        mqttPort = atoi(mqtt_port);
-        //mqttClientId = mqtt_client_id;
-        mqttClientId = deviceId;
-        mqttUser = mqtt_user;
-        mqttPassword = mqtt_password;
-        mqttTopicIn = mqtt_topic_in;
-        mqttTopicOut = mqtt_topic_out;
-        httpServer = http_server;
-        httpPort = atoi(http_port);
-        postDestination = post_destination;
+        strcpy(mqtt_server, json["mqtt_server"]); strcpy(mqtt_port, json["mqtt_port"]);
+        strcpy(mqtt_client_id, json["mqtt_client_id"]); strcpy(mqtt_user, json["mqtt_user"]); strcpy(mqtt_password, json["mqtt_password"]);
+        //strcpy(http_server, json["http_server"]); strcpy(http_port, json["http_port"]);
+        strcpy(mqtt_topic_in,mqtt_client_id); strcat(mqtt_topic_in,in); 
+        strcpy(mqtt_topic_in1,mqtt_client_id); strcat(mqtt_topic_in1,in1);
+        strcpy(mqtt_topic_in2,mqtt_client_id); strcat(mqtt_topic_in2,in2);
+        strcpy(mqtt_topic_in3,mqtt_client_id); strcat(mqtt_topic_in3,in3);
+        strcpy(mqtt_topic_in4,mqtt_client_id); strcat(mqtt_topic_in4,in4);
+        strcpy(mqtt_topic_out,mqtt_client_id); strcat(mqtt_topic_out,out);
+        strcpy(mqtt_topic_out1,mqtt_client_id); strcat(mqtt_topic_out1,out1);
+        //strcpy(post_destination,post_prefix); strcat(post_destination,mqtt_client_id); 
+        mqttServer = mqtt_server; mqttPort = atoi(mqtt_port);
+        mqttClientId = mqtt_client_id; mqttUser = mqtt_user; mqttPassword = mqtt_password;
+        mqttTopicIn = mqtt_topic_in; mqttTopicIn1 = mqtt_topic_in1; mqttTopicIn2 = mqtt_topic_in2; mqttTopicIn3 = mqtt_topic_in3; mqttTopicIn4 = mqtt_topic_in4;
+        mqttTopicOut = mqtt_topic_out; mqttTopicOut1 = mqtt_topic_out1;
+        //httpServer = http_server; httpPort = atoi(http_port); postDestination = post_destination;
         serializeJson(doc, Serial); 
       }
     }
@@ -137,9 +126,9 @@ void setup() {
 #if DEBUG == 0
   Serial.setDebugOutput(false);
 #endif  
-  checkOtaFile();
-  delay(100);
-  if (_otaSignal == 1 ) {
+  checkState();
+  checkFile(otaFile, otaSignal);  
+  if (otaSignal == 1 ) {
      //WiFi.persistent(false);
      String ssid = WiFi.SSID();
      String pass = WiFi.psk();
@@ -150,7 +139,7 @@ void setup() {
     }
     Serial.print("WiFi connected.  IP address:");
     Serial.println(WiFi.localIP());  
-    getUpdated();
+    //getUpdated(int which, const char* url, const char* fingerprint) { 
   }
   
   Serial.printf("before heap size: %u\n", ESP.getFreeHeap());
@@ -170,16 +159,17 @@ void setup() {
   }
   getDeviceId();
   before();
-  checkConfig();
+  checkFile(fpmFile, fpm);
+  checkFile(resFile, resolution);
   
   Serial.printf("setup heap size: %u\n", ESP.getFreeHeap());
   arducamInit();
   configManager();
-  Serial.println("Starting UDP");
+  Serial.println(F("Starting UDP"));
   Udp.begin(localPort);
   Serial.print("Local port: ");
   Serial.println(Udp.localPort());
-  Serial.println("waiting for sync");
+  Serial.println(F("waiting for sync"));
   setSyncProvider(getNtpTime);
   setSyncInterval(300);
   mqttInit();
@@ -195,40 +185,36 @@ void setup() {
 
 void loop() {
   if ( ! executeOnce) {
-    executeOnce = true; 
-   //mqttReconnect();
+    executeOnce = true;
   }
   #if WEB_SERVER == 1
     server.handleClient();
   #endif
-  checkButton();
-
+  checkButton(0);
+  
+  if ( WiFi.status() != WL_CONNECTED) { // WiFiMulti.run() != WL_CONNECTED
+    ++wifiFailCount;
+    ticker.attach(0.1, tick);
+    if (wifiFailCount == 10) {
+      configManager();
+    }  
+  }
   if (!mqttClient.connected()) {
     ++mqttFailCount;
-    ticker.attach(0.3, tick);
-    checkButton();
+    checkButton(0);
     long now = millis();
-    if (now - lastMqttReconnectAttempt > 5000) {
+    mqttError(2);
+    if (now - lastMqttReconnectAttempt > interval1) {
         lastMqttReconnectAttempt = now;
         if (mqttFailCount == 5) {
-       //   mqttReconnect() = false;
-          Serial.println(F("Connexion MQTT infructueuse après 5 essais --> mode config"));
-          lastMqttReconnectAttempt = 0;
-          mqttFailCount = 0;
-          configManager();
+          mqttError(3);
         }
         if (mqttConnect()) {
-            #if DEBUG == 1
-              Serial.print(F("Attempting MQTT connection to : "));
-              Serial.println(mqttServer);
-            #endif
-            lastMqttReconnectAttempt = 0;
+          lastMqttReconnectAttempt = 0;
         }
     }
-  }else {
-      wifiFailCount = 0;
-      if (STATE_LED == LOW); digitalWrite(STATE_LED, HIGH);
-      ticker.detach();
+  }
+  else {
       if (timeStatus() != timeNotSet) {
         if (now() != prevDisplay) { //update the display only if time has changed
           prevDisplay = now();
@@ -237,17 +223,7 @@ void loop() {
       }
       if (transmitNow) { // checks if the buffer is full
       }
-      //Capture();
       mqttClient.loop();
   }
     
- if ( WiFi.status() != WL_CONNECTED) { // WiFiMulti.run() != WL_CONNECTED
-    ticker.attach(0.1, tick);
-    ++wifiFailCount;
-    if (wifiFailCount == 15) {
-      ticker.detach();
-      configManager();
-    }  
-  //checkButton();
-  }
 }

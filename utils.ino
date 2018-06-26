@@ -15,8 +15,6 @@ void setPins(){
 void setReboot() { // Boot to sketch
 //    pinMode(STATE_LED, OUTPUT);
 //    digitalWrite(STATE_LED, HIGH);
-//    pinMode(MY_INCLUSION_MODE_BUTTON_PIN, OUTPUT);
-//    digitalWrite(MY_INCLUSION_MODE_BUTTON_PIN, HIGH);
 //    pinMode(D8, OUTPUT);
 //    digitalWrite(D8, LOW);
     Serial.println(F("Pins set for reboot"));
@@ -43,126 +41,233 @@ void setDefault() {
     setReboot();
 }
 
-void checkButton() {
-  debouncer.update();
-  int value = debouncer.read();
-  if (value == LOW) {
-      Serial.println(F("Long push detected, ask for config"));
-      manualConfig = true;
-      configManager();
-      value == HIGH;
+void checkButton(int context) {
+  if ( context = 0 ) {
+    debouncer.update();
+    int value = debouncer.read();
+    if (value == LOW) {
+        Serial.println(F("Long push detected, asked for config"));
+        manualConfig = true;
+        configManager();
+        value == HIGH;
+    }
+  }
+  if ( context = 1 ) {
+    debouncer.update();
+    int value = debouncer.read();
+    if (value == LOW) {
+        Serial.println(F("Long push detected, asked for return"));
+        manualConfig = false;
+        configManager();
+        value == HIGH;
+        return;
+    }
   }
 }
 
-void getDeviceId() {
+char* getDeviceId() {
+//  String clientId = "Arducam-";
+//  clientId += String(random(0xffff), HEX);  
   char msgBuffer[7];         
   char *espChipId;
   float chipId = ESP.getChipId();
+  char deviceId[20];
   espChipId = dtostrf(chipId, 7, 0, msgBuffer);
   strcpy(deviceId,devicePrefix); 
   strcat(deviceId,espChipId);
   Serial.println(deviceId);
+  return deviceId;
 }
 
-void checkOtaFile() {
+/// FILE MANAGER
+
+void checkState() {
   SPIFFS.begin();
   delay(10);
   // check for properties file
   File f = SPIFFS.open(otaFile, "r");
+//  File f1 = SPIFFS.open(fpmFile, "r");
+//  File f2 = SPIFFS.open(resFile, "r");
   if (!f ) {
-    f = SPIFFS.open(otaFile, "w");
+  // one of the config file  doesnt exist so lets format and create a properties file
+    Serial.println("Please wait 30 secs for SPIFFS to be formatted");
+    SPIFFS.format();
+    Serial.println("Spiffs formatted");
+  }
+  else {
+    f.close(); //f1.close(); f2.close();
+  }
+}
+
+void checkFile(const String fileName, int value) {
+  SPIFFS.begin();
+  delay(10);
+  // check for properties file
+  File f = SPIFFS.open(fileName, "r");
+  if (!f ) {
+    f = SPIFFS.open(fileName, "w");
     if (!f) {
-      Serial.println(F("OTA file open failed"));
+      Serial.printf("%s open failed \n", fileName.c_str());
     }
     else {
-      Serial.println(F("====== Writing to OTA file ========="));
-      f.println(_otaSignal);
+      Serial.printf("====== Writing to %s ========= \n", fileName.c_str());
+      f.println(value);
       f.close();
     }
   }
   else {
-    Serial.println(F("OTA file exists. Reading."));
+    // if the properties file exists on startup,  read it and set the defaults
+    Serial.printf("%s exists. Reading. \n", fileName.c_str());
     while (f.available()) {
-      // read line by line from the file
-      String str = f.readStringUntil('\n');
-      Serial.println(str);
-      _otaSignal = str.toInt();
+      if ( fileName == "ota.txt" ) {
+        String str = f.readStringUntil('\n');
+        Serial.println(str);
+        // extract otaSignal, otaType, otaUrl, and fingerprint ( for httpsUpdate )
+        // if the int correspond to waited value, update otaSignal, otaFile and setReboot()
+        //value = str.toInt();
+      }
+      else {
+        String str = f.readStringUntil('\n');
+        Serial.println(str);
+        value = str.toInt();  
+      }
     }
     f.close();
   }
 }
 
-void updateOtaFile() {
-  File f = SPIFFS.open(otaFile, "w");
+void updateFile(const String fileName, int value) {
+  File f = SPIFFS.open(fileName.c_str(), "w");
   if (!f) {
-    Serial.println(F("OTA file open failed"));
+    Serial.printf("%s open failed \n", fileName.c_str());
   }
   else {
-    Serial.println(F("====== Writing to OTA file ========="));
-
-    f.println(_otaSignal);
-    Serial.println(F("OTA file updated"));
+    Serial.printf("====== Writing to %s  ========= \n", fileName.c_str());
+    f.println(value);
+    Serial.printf(" %s  updated \n", fileName.c_str());
     f.close();
   }
 }
 
-void connectWifi() {
- //   WiFiManager wifiManager;
-    String ssid = WiFi.SSID();
-    String pass = WiFi.psk();
-    WiFi.begin(ssid.c_str(), pass.c_str());
-   
-    //while (WiFiMulti.run() != WL_CONNECTED) { //use this when using ESP8266WiFiMulti.h
-    while (WiFi.status() != WL_CONNECTED) { 
-       Serial.print("Attempting Wifi connection....");     
-       delay(1000);    
+/// OTA
+void getUpdated(int which, const char* url, const char* fingerprint) { 
+  if ((WiFi.status() == WL_CONNECTED)) {
+    ticker.attach(0.7, tick);
+    otaSignal = 0;
+    updateFile(otaFile, otaSignal);
+    ESPhttpUpdate.rebootOnUpdate(true);
+    t_httpUpdate_return ret;
+    if ( which == 0 ) {
+      Serial.println(F("Update Sketch..."));
+      t_httpUpdate_return ret = ESPhttpUpdate.update(url);
     }
-    Serial.println();
-    Serial.print("WiFi connected.  IP address:");
-    Serial.println(WiFi.localIP());    
-}
-
-void getUpdated() {
-//  if((WiFi.status() == WL_CONNECTED)) {
-//     _MQTT_ethClient.stop();
-//     _MQTT_client.disconnect();
-    _otaSignal = 0;
-    updateOtaFile();
-   // Serial.printf("before httpUpdate heap size: %u\n", ESP.getFreeHeap());
-    Serial.println(F("Update sketch..."));
-
-    //t_httpUpdate_return ret = ESPhttpUpdate.update(otaUrl,"", httpsFingerprint);
-    t_httpUpdate_return ret = ESPhttpUpdate.update(otaUrl);
-    //t_httpUpdate_return ret = ESPhttpUpdate.update(httpServer, httpPort, url, currentVersion, httpsFingerprint);
-   
-    switch(ret) {
+    if ( which == 1 ) {
+      Serial.println(F("Update Sketch..."));
+      //t_httpUpdate_return ret = ESPhttpUpdate.updateSpiffs(otaUrl, "", httpsFingerprint);
+      t_httpUpdate_return ret = ESPhttpUpdate.updateSpiffs(url, "", fingerprint);
+    }
+    if ( which == 2 ) {
+      Serial.println(F("Update SPIFFS..."));
+      t_httpUpdate_return ret = ESPhttpUpdate.updateSpiffs(url);
+    }
+    if ( which == 3 ) {
+      Serial.println(F("Update SPIFFS..."));
+      t_httpUpdate_return ret = ESPhttpUpdate.updateSpiffs(url, "", fingerprint);
+    }
+    ticker.detach();
+    switch (ret) {
       case HTTP_UPDATE_FAILED:
-          Serial.printf("HTTP_UPDATE_FAILD Error (%d): %s", ESPhttpUpdate.getLastError(), ESPhttpUpdate.getLastErrorString().c_str());
-          Serial.println();
-          break;
+        Serial.printf("HTTP_UPDATE_FAILD Error (%d): %s", ESPhttpUpdate.getLastError(), ESPhttpUpdate.getLastErrorString().c_str());
+        Serial.println();
+        break;
       case HTTP_UPDATE_NO_UPDATES:
-          Serial.println(F("HTTP_UPDATE_NO_UPDATES"));
-          break;
+        Serial.println(F("HTTP_UPDATE_NO_UPDATES"));
+        break;
       case HTTP_UPDATE_OK:
-          Serial.println(F("HTTP_UPDATE_OK"));
-          break;
-     }    
-//  }
-  // ticker.detach();
-}
-void saveConfigCallback () {
-  Serial.println(F("Should save config"));
-  shouldSaveConfig = true;
+        Serial.println(F("HTTP_UPDATE_OK"));
+        break;
+    }
+  }
+} 
+
+/// CAM SETTINGS
+void setCamResolution(int reso) {
+  resolution = reso;
+  updateFile(resFile, reso);
+  switch (reso) {
+    case 0:
+      myCAM.OV2640_set_JPEG_size(OV2640_160x120);
+      Serial.println(F("Resolution set to 160x120"));
+      break;
+    case 1:
+      myCAM.OV2640_set_JPEG_size(OV2640_176x144);
+      Serial.println(F("Resolution set to 176x144"));
+      break;
+    case 2:
+      myCAM.OV2640_set_JPEG_size(OV2640_320x240);
+      Serial.println(F("Resolution set to 320x240"));
+      break;
+    case 3:
+      myCAM.OV2640_set_JPEG_size(OV2640_352x288);
+      Serial.println(F("Resolution set to 352x288"));
+      break;
+    case 4:
+      myCAM.OV2640_set_JPEG_size(OV2640_640x480);
+      Serial.println(F("Resolution set to 640x480"));
+      break;
+    case 5:
+      myCAM.OV2640_set_JPEG_size(OV2640_800x600);
+      Serial.println(F("Resolution set to 800x600"));
+      break;
+    case 6:
+      myCAM.OV2640_set_JPEG_size(OV2640_1024x768);
+      Serial.println(F("Resolution set to 1024x768"));
+      break;
+    case 7:
+      myCAM.OV2640_set_JPEG_size(OV2640_1280x1024);
+      Serial.println(F("Resolution set to 1280x1024"));
+      break;
+    case 8:
+      myCAM.OV2640_set_JPEG_size(OV2640_1600x1200);
+      Serial.println(F("Resolution set to 1600x1200"));
+      break;
+  }
 }
 
-//gets called when WiFiManager enters configuration mode
-void configModeCallback (WiFiManager *myWiFiManager) {
- // delay(1000);
-  Serial.println(F("Entered config mode"));
-  //  if((WiFi.status() == WL_CONNECTED)) {
+void setFPM(int interv) {
+  fpm = interv;
+  Serial.printf("FPM set to %i. \n", interv);
+  updateFile(fpmFile, interv);
+  switch (interv) {
+    case 0:
+      minDelayBetweenframes = 5000;
+      break;
+    case 1:
+      minDelayBetweenframes = (10*1000);
+      break;
+    case 2:
+      minDelayBetweenframes = (15*1000);
+      break;
+    case 3:
+      minDelayBetweenframes = (30*1000);
+      break;
+    case 4:
+      minDelayBetweenframes = (60*1000);
+      break;
+//    case 5:
+//      minDelayBetweenframes = (12*1000);
+//      break;
+//    case 6:
+//      minDelayBetweenframes = (10*1000);
 
+//      break;
+//    case 12:
+//      minDelayBetweenframes = (5*1000);
+//      break;
+  }
 }
 
+/// TIME
 void digitalClockDisplay() {
   // digital clock display of the time
   Serial.print(hour());

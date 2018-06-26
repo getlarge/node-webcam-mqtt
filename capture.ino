@@ -84,7 +84,7 @@ void camCapture(ArduCAM myCAM){
     server.sendContent(response);
   #endif
   
-  static const size_t bufferSize = 2048;
+  //static const size_t bufferSize = 2048;
   static uint8_t buffer[bufferSize] = {0xFF};
 
   while (len) {
@@ -133,31 +133,6 @@ void serverCapture(){
   Serial.println(total_time, DEC);
   Serial.println("CAM send Done!");
 }
-    
-//  void publishEncodedImage(encoded) {
-// /// ENCODED = rbase64.result()
-// int packet_size = 3000
-// int end = packet_size
-// int start = 0
-// int length = sizeof(rbase64.result())
-// int pos = 0
-// int no_of_packets = math.ceil(length/packet_size)
-//
-// while ( start <= sizeof(encoded)) {
-//  DynamicJsonDocument doc;
-//  JsonObject& json = doc.to<JsonObject>();
-//  json["data"] = encoded[start:end];
-//  json["pic_id"] = 2242;
-//  json["pos"] = pos;
-//  json["size"]: no_of_packets
-// mqttClient.publish(mqttTopicOut, doc)
-  // data = {"data": encoded[start:end], "pic_id":picId, "pos": pos, "size": no_of_packets}
-  // mqttClient.publish(mqttTopicOut,json.JSONEncoder().encode(data))
-  // end += packet_size
-  // start += packet_size
-  // pos = pos +1
-// }
-// }
 
 void serverStream(){
   #if WEB_SERVER == 1
@@ -194,7 +169,7 @@ void serverStream(){
       server.sendContent(response);
     #endif
     
-    static const size_t bufferSize = 2048;
+    //static const size_t bufferSize = 2048;
     static uint8_t buffer[bufferSize] = {0xFF};
     
     while (len) {
