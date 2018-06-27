@@ -33,9 +33,9 @@ void arducamInit() {
   //Change to JPEG capture mode and initialize the OV2640 module
   myCAM.set_format(JPEG);
   myCAM.InitCAM();
-  setFPM(fpm);
+  //setFPM(fpm);
   myCAM.OV2640_set_JPEG_size(OV2640_320x240);
-    //setCamResolution(resolution);
+  //setCamResolution(resolution);
   myCAM.clear_fifo_flag();
 
 //  Dir dir = SPIFFS.openDir("/pics");
@@ -48,6 +48,72 @@ void arducamInit() {
 //
 //  fileTotalKB = (int)fs_info.totalBytes;
 //  fileUsedKB = (int)fs_info.usedBytes;
+}
+
+/// CAM SETTINGS
+void setCamResolution(int reso) {
+  //resolution = reso;
+  switch (reso) {
+    case 0:
+      myCAM.OV2640_set_JPEG_size(OV2640_160x120);
+      Serial.println(F("Resolution set to 160x120"));
+      break;
+    case 1:
+      myCAM.OV2640_set_JPEG_size(OV2640_176x144);
+      Serial.println(F("Resolution set to 176x144"));
+      break;
+    case 2:
+      myCAM.OV2640_set_JPEG_size(OV2640_320x240);
+      Serial.println(F("Resolution set to 320x240"));
+      break;
+    case 3:
+      myCAM.OV2640_set_JPEG_size(OV2640_352x288);
+      Serial.println(F("Resolution set to 352x288"));
+      break;
+    case 4:
+      myCAM.OV2640_set_JPEG_size(OV2640_640x480);
+      Serial.println(F("Resolution set to 640x480"));
+      break;
+    case 5:
+      myCAM.OV2640_set_JPEG_size(OV2640_800x600);
+      Serial.println(F("Resolution set to 800x600"));
+      break;
+    case 6:
+      myCAM.OV2640_set_JPEG_size(OV2640_1024x768);
+      Serial.println(F("Resolution set to 1024x768"));
+      break;
+    case 7:
+      myCAM.OV2640_set_JPEG_size(OV2640_1280x1024);
+      Serial.println(F("Resolution set to 1280x1024"));
+      break;
+    case 8:
+      myCAM.OV2640_set_JPEG_size(OV2640_1600x1200);
+      Serial.println(F("Resolution set to 1600x1200"));
+      break;
+  }
+}
+
+void setFPM(int interv) {
+  //fpm = interv;
+  Serial.printf("FPM set to %i. \n", interv);
+  updateFile(fpmFile, interv);
+  switch (interv) {
+    case 0:
+      minDelayBetweenframes = 5000;
+      break;
+    case 1:
+      minDelayBetweenframes = (10*1000);
+      break;
+    case 2:
+      minDelayBetweenframes = (15*1000);
+      break;
+    case 3:
+      minDelayBetweenframes = (30*1000);
+      break;
+    case 4:
+      minDelayBetweenframes = (60*1000);
+      break;
+  }
 }
 
 void start_capture(){
@@ -83,10 +149,7 @@ void camCapture(ArduCAM myCAM){
     response += "Content-Length: " + String(len) + "\r\n\r\n";
     server.sendContent(response);
   #endif
-  
-  //static const size_t bufferSize = 2048;
   static uint8_t buffer[bufferSize] = {0xFF};
-
   while (len) {
       size_t will_copy = (len < bufferSize) ? len : bufferSize;
       SPI.transferBytes(&buffer[0], &buffer[0], will_copy);
@@ -96,7 +159,7 @@ void camCapture(ArduCAM myCAM){
       #endif
       if ( base64.encode(&buffer[0], will_copy) == RBASE64_STATUS_OK) {
          //Serial.println(base64.result());
-         mqttClient.publish(mqttTopicOut, base64.result(), sizeof(base64.result()));
+         mqttClient.publish((const char*)config.mqtt_topic_out, base64.result(), sizeof(base64.result()));
       }
       //mqttClient.publish(mqttTopicOut, &buffer[0], will_copy);
       len -= will_copy;
@@ -107,7 +170,7 @@ void camCapture(ArduCAM myCAM){
       #endif
     }
   //if (!mqttClient.connected()) break;
-  mqttClient.publish(mqttTopicOut, "eof");
+  mqttClient.publish((const char*)config.mqtt_topic_out, "eof");
   myCAM.CS_HIGH();
 }
 
@@ -144,32 +207,27 @@ void serverStream(){
   
   while (1){
     start_capture();
-    
     while (!myCAM.get_bit(ARDUCHIP_TRIG, CAP_DONE_MASK));
-    
     size_t len = myCAM.read_fifo_length();
-    if (len >= 0x07ffff){
+    if (len >= 0x07ffff) {
       Serial.println("Over size.");
       continue;
-    }else if (len == 0 ){
+    }
+    else if (len == 0 ) {
       Serial.println("Size is 0.");
       continue;
     }
-    
     myCAM.CS_LOW();
     myCAM.set_fifo_burst();
     #if !(defined (ARDUCAM_SHIELD_V2) && defined (OV2640_CAM))
       SPI.transfer(0xFF);
     #endif
-  
     #if WEB_SERVER == 1
       if (!client.connected()) break;
       response = "--frame\r\n";
       response += "Content-Type: image/jpeg\r\n\r\n";
       server.sendContent(response);
     #endif
-    
-    //static const size_t bufferSize = 2048;
     static uint8_t buffer[bufferSize] = {0xFF};
     
     while (len) {
@@ -187,21 +245,21 @@ void serverStream(){
 }
 
 #if WEB_SERVER == 1
-void handleNotFound(){
-  String message = "Server is running!\n\n";
-  message += "URI: ";
-  message += server.uri();
-  message += "\nMethod: ";
-  message += (server.method() == HTTP_GET)?"GET":"POST";
-  message += "\nArguments: ";
-  message += server.args();
-  message += "\n";
-  server.send(200, "text/plain", message);
-  
-  if (server.hasArg("ql")){
-    int ql = server.arg("ql").toInt();
-    myCAM.OV2640_set_JPEG_size(ql);delay(1000);
-    Serial.println("QL change to: " + server.arg("ql"));
+  void handleNotFound(){
+    String message = "Server is running!\n\n";
+    message += "URI: ";
+    message += server.uri();
+    message += "\nMethod: ";
+    message += (server.method() == HTTP_GET)?"GET":"POST";
+    message += "\nArguments: ";
+    message += server.args();
+    message += "\n";
+    server.send(200, "text/plain", message);
+    
+    if (server.hasArg("ql")){
+      int ql = server.arg("ql").toInt();
+      myCAM.OV2640_set_JPEG_size(ql);delay(1000);
+      Serial.println("QL change to: " + server.arg("ql"));
+    }
   }
-}
 #endif

@@ -1,16 +1,22 @@
 #include <FS.h> 
 
 #include <ArduinoJson.h>  
-#include <Arduino.h>
+//#include <Arduino.h>
 #include <ESP8266WiFi.h>
 #include <ESP8266WiFiMulti.h>
-#include <ESP8266HTTPClient.h>        
 #include <ESP8266httpUpdate.h>
-#include <ESP8266WebServer.h>
+#if WEB_SERVER == 1
+  #include <ESP8266WebServer.h>
+  #include <ESP8266HTTPClient.h>        
+#endif
 #include <DNSServer.h>
-#include <WiFiUdp.h>
-#include <WiFiManager.h> 
-#include <WiFiClientSecure.h> 
+#if NTP_SERVER == 1
+  #include <WiFiUdp.h>
+#endif
+#include <WiFiManager.h>
+#if WEB_SERVER_SECURE == 0 
+  #include <WiFiClientSecure.h> 
+#endif
 #include <PubSubClient.h>
 #include <rBase64.h>
 #include <TimeLib.h>
@@ -25,8 +31,9 @@
 #if !(defined ESP8266 )
 #error Please select the ArduCAM ESP8266 UNO board in the Tools/Board
 #endif
-
-WiFiUDP Udp;
+#if NTP_SERVER == 1
+  WiFiUDP Udp;
+#endif
 ESP8266WiFiMulti WiFiMulti;
 #if CLIENT_SECURE == 1
   WiFiClientSecure MqttWifiClient;
@@ -35,7 +42,7 @@ ESP8266WiFiMulti WiFiMulti;
   WiFiClient MqttWifiClient;
 #endif
 #if WEB_SERVER == 1
-ESP8266WebServer server(80);
+  ESP8266WebServer server(80);
 #endif
 PubSubClient mqttClient(MqttWifiClient);
 ArduCAM myCAM(OV2640, CS);
@@ -44,25 +51,27 @@ Ticker ticker;
 //rBase64generic<2048> base64;
 rBase64generic<bufferSize> base64;
 
+mqttConfig config; 
+
 void tick();
 void setPins();
+void checkButton(int context);
 void setReboot();
 void setDefault();
+void getDeviceId();
 void checkState();
 void checkFile(const String fileName, int value);
 void updateFile(const String fileName, int value);
-void checkButton(int e);
-char* getDeviceId();
 void getUpdated(int which, const char* url, const char* fingerprint);
-void connectWifi();
 void setPinsRebootUart();
 void saveConfigCallback();
+void configModeCallback (WiFiManager *myWiFiManager);
 void configManager();
 void arducamInit();
-void serverCapture();
-void serverStream();
 void setCamResolution(int reso);
 void setFPM(int interv);
+void serverCapture();
+void serverStream();
 void mqttInit();
 void mqttError();
 boolean mqttConnect();
@@ -70,63 +79,17 @@ void mqttCallback(char* topic, byte* payload, unsigned int length);
 #if WEB_SERVER == 1
   void handleNotFound();
 #endif
-time_t getNtpTime();
-time_t prevDisplay = 0; // when the digital clock was displayed
-void digitalClockDisplay();
-void printDigits(int digits);
-void sendNTPpacket(IPAddress &address);
+#if NTP_SERVER == 1
+  time_t getNtpTime();
+  time_t prevDisplay = 0; // when the digital clock was displayed
+  void digitalClockDisplay();
+  void printDigits(int digits);
+  void sendNTPpacket(IPAddress &address);
+#endif 
 
 void before() {
-  Serial.println();
-  Serial.println(F("mounting FS..."));
-  if (SPIFFS.begin()) {
-    Serial.println(F("mounted file system"));
-    if (SPIFFS.exists("/config.json")) {
-      Serial.println(F("reading config file"));
-      File configFile = SPIFFS.open("/config.json", "r");
-      if (configFile) {
-        Serial.println(F("opened config file"));
-        size_t size = configFile.size();
-        // Allocate a buffer to store contents of the file.
-        std::unique_ptr<char[]> buf(new char[size]);
-        configFile.readBytes(buf.get(), size);
-        DynamicJsonDocument doc;
-        DeserializationError error = deserializeJson(doc, buf.get());
-        if (error) {
-          Serial.println(F("Failed to load json config"));
-        }
-        JsonObject& json = doc.as<JsonObject>();
-        strcpy(mqtt_server, json["mqtt_server"]); strcpy(mqtt_port, json["mqtt_port"]);
-        strcpy(mqtt_client_id, json["mqtt_client_id"]); strcpy(mqtt_user, json["mqtt_user"]); strcpy(mqtt_password, json["mqtt_password"]);
-        //strcpy(http_server, json["http_server"]); strcpy(http_port, json["http_port"]);
-        strcpy(mqtt_topic_in,mqtt_client_id); strcat(mqtt_topic_in,in); 
-        strcpy(mqtt_topic_in1,mqtt_client_id); strcat(mqtt_topic_in1,in1);
-        strcpy(mqtt_topic_in2,mqtt_client_id); strcat(mqtt_topic_in2,in2);
-        strcpy(mqtt_topic_in3,mqtt_client_id); strcat(mqtt_topic_in3,in3);
-        strcpy(mqtt_topic_in4,mqtt_client_id); strcat(mqtt_topic_in4,in4);
-        strcpy(mqtt_topic_out,mqtt_client_id); strcat(mqtt_topic_out,out);
-        strcpy(mqtt_topic_out1,mqtt_client_id); strcat(mqtt_topic_out1,out1);
-        //strcpy(post_destination,post_prefix); strcat(post_destination,mqtt_client_id); 
-        mqttServer = mqtt_server; mqttPort = atoi(mqtt_port);
-        mqttClientId = mqtt_client_id; mqttUser = mqtt_user; mqttPassword = mqtt_password;
-        mqttTopicIn = mqtt_topic_in; mqttTopicIn1 = mqtt_topic_in1; mqttTopicIn2 = mqtt_topic_in2; mqttTopicIn3 = mqtt_topic_in3; mqttTopicIn4 = mqtt_topic_in4;
-        mqttTopicOut = mqtt_topic_out; mqttTopicOut1 = mqtt_topic_out1;
-        //httpServer = http_server; httpPort = atoi(http_port); postDestination = post_destination;
-        serializeJson(doc, Serial); 
-      }
-    }
-  } else {
-    Serial.println(F("Failed to mount FS"));
-  }
-  ticker.detach();
-}
-
-void setup() {
-  Serial.begin(BAUD_RATE);
-#if DEBUG == 0
-  Serial.setDebugOutput(false);
-#endif  
-  checkState();
+  getDeviceId();
+  //checkState();
   checkFile(otaFile, otaSignal);  
   if (otaSignal == 1 ) {
      //WiFi.persistent(false);
@@ -141,8 +104,6 @@ void setup() {
     Serial.println(WiFi.localIP());  
     //getUpdated(int which, const char* url, const char* fingerprint) { 
   }
-  
-  Serial.printf("before heap size: %u\n", ESP.getFreeHeap());
   for (uint8_t t = 4; t > 0; t--) { // Utile en cas d'OTA ?
       Serial.printf("[SETUP] WAIT %d...\n", t);
       Serial.flush();
@@ -157,23 +118,73 @@ void setup() {
   if (resetConfig) {
     setDefault(); 
   }
-  getDeviceId();
+  Serial.printf("before heap size: %u\n", ESP.getFreeHeap());
+}
+
+void loadConfig() {
+  Serial.println();
+  Serial.println(F("mounting FS..."));
+  if (SPIFFS.begin()) {
+    Serial.println(F("mounted file system"));
+    if (SPIFFS.exists("/config.json")) {
+      Serial.println(F("reading config file"));
+      File configFile = SPIFFS.open("/config.json", "r");
+      if (configFile) {
+        Serial.println(F("opened config file"));
+        size_t size = configFile.size();
+        // Allocate a buffer to store contents of the file.
+        std::unique_ptr<char[]> buf(new char[size]);
+        configFile.readBytes(buf.get(), size);
+        StaticJsonDocument<512> doc;
+        DeserializationError error = deserializeJson(doc, buf.get());
+        if (error) {
+          Serial.println(F("Failed to load json config"));
+        }
+        JsonObject& obj = doc.as<JsonObject>();
+        strlcpy(config.mqtt_server, obj["mqtt_server"] | "server2.getlarge.eu", sizeof(config.mqtt_server));
+        strlcpy(config.mqtt_port, obj["mqtt_port"] | "4006",  sizeof(config.mqtt_port));         
+        strlcpy(config.mqtt_user, obj["mqtt_user"] | "",  sizeof(config.mqtt_user));         
+        strlcpy(config.mqtt_password, obj["mqtt_password"] | "",  sizeof(config.mqtt_password));         
+        strcpy(config.mqtt_topic_in,deviceId); 
+        strcat(config.mqtt_topic_in,in); 
+        strcpy(config.mqtt_topic_out,deviceId); 
+        strcat(config.mqtt_topic_out,out);
+        if (serializeJsonPretty(doc, Serial) == 0) {
+          Serial.println(F("Failed to write to file"));
+        } 
+        Serial.println();
+      }
+    }
+  } else {
+    Serial.println(F("Failed to mount FS"));
+  }
+  ticker.detach();
+}
+
+void setup() {
+  Serial.begin(BAUD_RATE);
+  #if DEBUG == 0
+    Serial.setDebugOutput(false);
+  #endif 
+  Serial.println(F("====== Before setup ========="));
   before();
+  Serial.println(F("====== Setup started ========="));
+  loadConfig();
   checkFile(fpmFile, fpm);
   checkFile(resFile, resolution);
-  
-  Serial.printf("setup heap size: %u\n", ESP.getFreeHeap());
   arducamInit();
   configManager();
-  Serial.println(F("Starting UDP"));
-  Udp.begin(localPort);
-  Serial.print("Local port: ");
-  Serial.println(Udp.localPort());
-  Serial.println(F("waiting for sync"));
-  setSyncProvider(getNtpTime);
-  setSyncInterval(300);
-  mqttInit();
-  
+  delay(1000);
+  #if NTP_SERVER == 1
+    Serial.println(F("Starting UDP"));
+    Udp.begin(localPort);
+    Serial.print("Local port: ");
+    Serial.println(Udp.localPort());
+    Serial.println(F("waiting for sync"));
+    setSyncProvider(getNtpTime);
+    setSyncInterval(300);
+    delay(100);
+  #endif
   #if WEB_SERVER == 1
     server.on("/capture", HTTP_GET, serverCapture);
     server.on("/stream", HTTP_GET, serverStream);
@@ -181,6 +192,8 @@ void setup() {
     server.begin();
     Serial.println("Server started");
   #endif
+  Serial.printf("setup heap size: %u\n", ESP.getFreeHeap());
+  Serial.println(F("====== Setup ended========="));
 }
 
 void loop() {
@@ -194,36 +207,41 @@ void loop() {
   
   if ( WiFi.status() != WL_CONNECTED) { // WiFiMulti.run() != WL_CONNECTED
     ++wifiFailCount;
-    ticker.attach(0.1, tick);
+    ticker.attach(0.5, tick);
     if (wifiFailCount == 10) {
       configManager();
     }  
   }
   if (!mqttClient.connected()) {
-    ++mqttFailCount;
-    checkButton(0);
     long now = millis();
-    mqttError(2);
+    checkButton(0);
+    ticker.attach(0.3, tick);
     if (now - lastMqttReconnectAttempt > interval1) {
-        lastMqttReconnectAttempt = now;
-        if (mqttFailCount == 5) {
-          mqttError(3);
-        }
-        if (mqttConnect()) {
-          lastMqttReconnectAttempt = 0;
-        }
+      lastMqttReconnectAttempt = now;
+      ++mqttFailCount;
+      if (mqttConnect()) {
+        mqttFailCount = 0;
+        lastMqttReconnectAttempt = 0;
+      }
+      if (mqttFailCount > 5) {
+        Serial.println(F("After 5 MQTT connection failure --> config mode"));
+        lastMqttReconnectAttempt = 0;
+        configManager();        
+      }
     }
   }
   else {
+    #if NTP_SERVER == 1
       if (timeStatus() != timeNotSet) {
         if (now() != prevDisplay) { //update the display only if time has changed
           prevDisplay = now();
           digitalClockDisplay();
         }
       }
-      if (transmitNow) { // checks if the buffer is full
-      }
-      mqttClient.loop();
+    #endif
+    if (transmitNow) { // checks if the buffer is full
+    }
+    mqttClient.loop();
   }
     
 }
