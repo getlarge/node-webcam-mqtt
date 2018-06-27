@@ -66,7 +66,7 @@ void configManager() {
   if (( !(const char*)config.mqtt_server ) || (configCount > 1 && manualConfig == true)) {
     Serial.println(F("Manual config access"));
     wifiManager.setConfigPortalTimeout(configTimeout1);
-    wifiManager.startConfigPortal(deviceId, devicePass);
+    wifiManager.startConfigPortal(config.mqtt_client, devicePass);
     //wifiManager.startConfigPortal(deviceId);  
   }
 
@@ -74,7 +74,7 @@ void configManager() {
   if (((configCount > 1 && mqttClient.connected() && WiFi.status() == WL_CONNECTED) || (configCount > 1 && !mqttClient.connected() && WiFi.status() == WL_CONNECTED)) && manualConfig == false) { 
     Serial.println(F("User config access"));
     wifiManager.setConfigPortalTimeout(configTimeout2);
-    wifiManager.startConfigPortal(deviceId, devicePass);
+    wifiManager.startConfigPortal(config.mqtt_client, devicePass);
     long now = millis();
     if (now - lastMqttReconnectAttempt > 5000) {
       lastMqttReconnectAttempt = now;
@@ -92,7 +92,7 @@ void configManager() {
   if (WiFi.status() != WL_CONNECTED) {
     Serial.println(F("Auto config access"));
     //wifiManager.setConfigPortalTimeout(configTimeout1);
-    if (!wifiManager.autoConnect(deviceId, devicePass)) {
+    if (!wifiManager.autoConnect(config.mqtt_client, devicePass)) {
       Serial.println(F("Connection failure --> Timeout"));
       delay(3000);
       setReboot();
@@ -100,21 +100,21 @@ void configManager() {
   }
 
   else {
+    
     if (shouldSaveConfig) {
       //config.mqtt_client = ;
-      strcpy(config.mqtt_client, deviceId); 
       strcpy(config.mqtt_server, custom_mqtt_server.getValue()); 
       strcpy(config.mqtt_port, custom_mqtt_port.getValue());
       strcpy(config.mqtt_user, custom_mqtt_user.getValue()); 
       strcpy(config.mqtt_password, custom_mqtt_password.getValue());
-      strcpy(config.mqtt_topic_in,deviceId); 
-      strcat(config.mqtt_topic_in,inPrefix); 
-      //strcat(config.mqtt_topic_in,message.in_prefix); 
-      strcpy(config.mqtt_topic_out,deviceId); 
-      strcat(config.mqtt_topic_out,outPrefix);
+      strcpy(config.mqtt_topic_in,config.mqtt_client); 
+      strcat(config.mqtt_topic_in,message.in_prefix); 
+      strcpy(config.mqtt_topic_out,config.mqtt_client); 
+      strcat(config.mqtt_topic_out,message.out_prefix); 
+        
       //strcat(config.mqtt_topic_in,message.out_prefix); 
       Serial.println(F("Saving config"));
-      StaticJsonDocument<256> doc; 
+      StaticJsonDocument<objBufferSize> doc; 
       JsonObject& obj = doc.to<JsonObject>();
       obj["mqtt_server"] = config.mqtt_server;
       obj["mqtt_port"] = config.mqtt_port;

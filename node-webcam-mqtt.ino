@@ -48,7 +48,7 @@ PubSubClient mqttClient(wifiClient);
 ArduCAM myCAM(OV2640, CS);
 Bounce debouncer = Bounce();
 Ticker ticker;
-rBase64generic<bufferSize> base64;
+rBase64generic<camBufferSize> base64;
 //rBase64generic<2048> base64;
 
 mqttConfig config; 
@@ -89,7 +89,6 @@ void mqttCallback(char* topic, byte* payload, unsigned int length);
 #endif 
 
 void before() {
-  getDeviceId();
   //checkState();
   checkFile(otaFile, otaSignal);  
   if (otaSignal == 1 ) {
@@ -136,7 +135,8 @@ void loadConfig() {
         // Allocate a buffer to store contents of the file.
         std::unique_ptr<char[]> buf(new char[size]);
         configFile.readBytes(buf.get(), size);
-        StaticJsonDocument<512> doc;
+        Serial.println(sizeof(buf.get()));
+        StaticJsonDocument<(objBufferSize * 2)> doc;
         DeserializationError error = deserializeJson(doc, buf.get());
         if (error) {
           Serial.println(F("Failed to load json config"));
@@ -144,7 +144,7 @@ void loadConfig() {
         JsonObject& obj = doc.as<JsonObject>();
         strlcpy(config.mqtt_server, obj["mqtt_server"] | "server2.getlarge.eu", sizeof(config.mqtt_server));
         strlcpy(config.mqtt_port, obj["mqtt_port"] | "4006",  sizeof(config.mqtt_port));         
-        strlcpy(config.mqtt_client, obj["mqtt_client"] | "node-webcam",  sizeof(config.mqtt_client));         
+        strlcpy(config.mqtt_client, obj["mqtt_client"] | SKETCH_NAME,  sizeof(config.mqtt_client));         
         strlcpy(config.mqtt_user, obj["mqtt_user"] | "",  sizeof(config.mqtt_user));         
         strlcpy(config.mqtt_password, obj["mqtt_password"] | "",  sizeof(config.mqtt_password));
         strlcpy(config.mqtt_topic_in, obj["mqtt_topic_in"] | "node-webcam-in",  sizeof(config.mqtt_topic_in));
@@ -173,6 +173,8 @@ void setup() {
   checkFile(fpmFile, fpm);
   checkFile(resFile, resolution);
   arducamInit();
+    getDeviceId();
+
   configManager();
   delay(1000);
   #if NTP_SERVER == 1
@@ -244,7 +246,7 @@ void loop() {
     if (timelapse == true) {
       if ((now - lastPictureAttempt > minDelayBetweenframes) && transmitNow == true) {
         lastPictureAttempt = now;
-        serverCapture();
+        serverCapture(1);
       }
     }
   }   

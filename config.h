@@ -4,7 +4,7 @@
 
 /// GLOBALS
 #define DEBUG 1
-#define DEBUG_WM 1
+#define DEBUG_WM 0
 #define DEBUG_PAYLOAD 0
 #define BAUD_RATE 115200
 
@@ -20,17 +20,18 @@ int configCount = 0, wifiFailCount = 0, mqttFailCount = 0, configMode = 0;
 #define CS 16 //// ARDUCAM
 
 /// NETWORK PARAMS
+#define ID_TYPE 0 // 0 : prefix+espCHipId - 1 : prefix+MACadress - 2 : prefix+EUI-64 address
 #define CLIENT_SECURE 0
 #define MQTT_CLIENT 1
 #define WEB_SERVER 0
 #define WEB_SERVER_SECURE 0
 #define NTP_SERVER 0
+//char devicePass[40]="motdepasse", deviceId[20], devicePrefix[8] = "Camera";
+char devicePass[40]="motdepasse", devicePrefix[8] = "Camera";
 
-char devicePass[30]="motdepasse", deviceId[20], devicePrefix[8] = "Camera";
-
+/// Go deeper into message details, with commands and sensors table ?
 struct messageFormat {
-  char id[40];
-  const char *deviceId;
+  char *deviceId;
   char in_prefix[10] = "/in";
   char out_prefix[10] = "/out";
   char* sensor;
@@ -41,20 +42,16 @@ struct messageFormat {
 struct mqttConfig {
   char mqtt_server[40];
   char mqtt_port[6];
-  char mqtt_client[20];
+  char mqtt_client[40];
   char mqtt_user[20];
   char mqtt_password[30];
   char mqtt_topic_out[50];
   char mqtt_topic_in[50];
 };
 
-char outPrefix[20]= "/out";
-char inPrefix[10]= "/in";
-//char in[10]= "/in/#";
-
-static const size_t bufferSize = 2048; // 4096; //2048; //1024;
-
-//// FILE MANAGER
+//// FILE / STREAM MANAGER
+static const size_t camBufferSize = 1024; // 4096; //2048; //1024;
+static const size_t objBufferSize = 256;
 static const int fileSpaceOffset = 700000;
 const String otaFile = "ota.txt"; const String resFile = "res.txt"; const String fpmFile = "fpm.txt";
 int fileTotalKB = 0;
@@ -65,6 +62,8 @@ int resolution = 4; int fpm = 1;
 int otaSignal = 0;
 
 //// NTP
-static const char ntpServerName[] = "fr.pool.ntp.org";
-const int timeZone = 1;     // Central European Time
-unsigned int localPort = 8888;  // local port to listen for UDP packets
+#if NTP_SERVER == 1
+  static const char ntpServerName[] = "fr.pool.ntp.org";
+  const int timeZone = 1;     // Central European Time
+  unsigned int localPort = 8888;  // local port to listen for UDP packets
+#endif

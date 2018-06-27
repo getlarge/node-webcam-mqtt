@@ -3,17 +3,17 @@
 ///////////////////////////////////////////////////////////////////////////////////
 
 void tick() {
-  int state = digitalRead(STATE_LED); 
-  digitalWrite(STATE_LED, !state); 
+  int state = digitalRead(STATE_LED);
+  digitalWrite(STATE_LED, !state);
 }
 
-void setPins(){
-    pinMode(STATE_LED, OUTPUT);
-    digitalWrite(STATE_LED, HIGH);
-    pinMode(OTA_BUTTON_PIN, INPUT_PULLUP);
-    debouncer.attach(OTA_BUTTON_PIN);
-    debouncer.interval(3000);
-    Serial.println(F("Pins set"));
+void setPins() {
+  pinMode(STATE_LED, OUTPUT);
+  digitalWrite(STATE_LED, HIGH);
+  pinMode(OTA_BUTTON_PIN, INPUT_PULLUP);
+  debouncer.attach(OTA_BUTTON_PIN);
+  debouncer.interval(3000);
+  Serial.println(F("Pins set"));
 }
 
 void checkButton(int context) {
@@ -21,62 +21,84 @@ void checkButton(int context) {
     debouncer.update();
     int value = debouncer.read();
     if (value == LOW) {
-        Serial.println(F("Long push detected, asked for config"));
-        manualConfig = true;
-        configManager();
-        value == HIGH;
+      Serial.println(F("Long push detected, asked for config"));
+      manualConfig = true;
+      configManager();
+      value == HIGH;
     }
   }
   if ( context == 1 ) {
     debouncer.update();
     int value = debouncer.read();
     if (value == LOW) {
-        Serial.println(F("Long push detected, asked for return"));
-        manualConfig = false;
-        configManager();
-        value == HIGH;
-        return;
+      Serial.println(F("Long push detected, asked for return"));
+      manualConfig = false;
+      configManager();
+      value == HIGH;
+      return;
     }
   }
 }
 
 void setReboot() { // Boot to sketch
-    pinMode(STATE_LED, OUTPUT);
-    digitalWrite(STATE_LED, HIGH);
-    pinMode(D8, OUTPUT);
-    digitalWrite(D8, LOW);
-    Serial.println(F("Pins set for reboot"));
-//    Serial.flush();
-//    yield(); yield(); delay(500);
-    delay(5000);
-    ESP.reset(); //ESP.restart();
-    delay(2000);
+  pinMode(STATE_LED, OUTPUT);
+  digitalWrite(STATE_LED, HIGH);
+  pinMode(D8, OUTPUT);
+  digitalWrite(D8, LOW);
+  Serial.println(F("Pins set for reboot"));
+  //    Serial.flush();
+  //    yield(); yield(); delay(500);
+  delay(5000);
+  ESP.reset(); //ESP.restart();
+  delay(2000);
 }
 
-void setDefault() { 
-    ticker.attach(2, tick);
-    Serial.println(F("Resetting config to the inital state"));
-    resetConfig = false;
-    SPIFFS.begin();
-    delay(10);
-    SPIFFS.format();
-    WiFiManager wifiManager;
-    wifiManager.resetSettings();
-    delay(100);
-    Serial.println(F("System cleared"));
-    ticker.detach();
-    Serial.println(ESP.eraseConfig());
-    setReboot();
+void setDefault() {
+  ticker.attach(2, tick);
+  Serial.println(F("Resetting config to the inital state"));
+  resetConfig = false;
+  SPIFFS.begin();
+  delay(10);
+  SPIFFS.format();
+  WiFiManager wifiManager;
+  wifiManager.resetSettings();
+  delay(100);
+  Serial.println(F("System cleared"));
+  ticker.detach();
+  Serial.println(ESP.eraseConfig());
+  setReboot();
 }
 
-void getDeviceId() { 
-  char *espChipId;
-  float chipId = ESP.getChipId();
-  char msgBuffer[sizeof(chipId)];         
-  espChipId = dtostrf(chipId, sizeof(chipId), 0, msgBuffer);
-  strcpy(deviceId,devicePrefix); 
-  strcat(deviceId,espChipId);
-  //Serial.println(deviceId);
+void getDeviceId() {
+  #if ID_TYPE == 0
+    char deviceId[20];
+    char *espChipId;
+    float chipId = ESP.getChipId();
+    char chipIdBuffer[sizeof(chipId)];
+    espChipId = dtostrf(chipId, sizeof(chipId), 0, chipIdBuffer);
+    strcpy(deviceId, devicePrefix);
+    strcat(deviceId, espChipId);
+  #endif
+  #if ID_TYPE == 1
+    char deviceId[20];
+    String macAdress = WiFi.macAddress();
+    char macAdressBuffer[20];
+    macAdress.toCharArray(macAdressBuffer, 20);
+    // next => remove the ":" in the mac adress
+    strcpy(deviceId,devicePrefix);
+    strcat(deviceId,macAdressBuffer);
+  #endif
+//    #if ID_TYPE == 2
+//// soyons fous, let's create an eui64 address ( like ipv6 )
+////      Step #1: Split the MAC address in the middle:
+////      Step #2: Insert FF:FE in the middle:
+////      Step #4: Convert the first eight bits to binary:
+////      Step #5: Flip the 7th bit:
+////      Step #6: Convert these first eight bits back into hex:
+//    #endif
+  strcpy(config.mqtt_client, deviceId);
+  delay(100); 
+  Serial.println(deviceId);
 }
 
 /// FILE MANAGER
@@ -86,11 +108,11 @@ void checkState() {
   // check for properties file
   File f = SPIFFS.open(otaFile, "r");
   if (!f ) {
-  // one of the config file  doesnt exist so lets format and create a properties file
-//    Serial.println("Please wait 30 secs for SPIFFS to be formatted");
-//    SPIFFS.format();
-//    Serial.println("Spiffs formatted");
-//    setReboot();
+    // one of the config file  doesnt exist so lets format and create a properties file
+    //    Serial.println("Please wait 30 secs for SPIFFS to be formatted");
+    //    SPIFFS.format();
+    //    Serial.println("Spiffs formatted");
+    //    setReboot();
   }
   else {
     f.close(); //f1.close(); f2.close();
@@ -126,7 +148,7 @@ void checkFile(const String fileName, int value) {
       else {
         String str = f.readStringUntil('\n');
         Serial.println(str);
-        value = str.toInt();  
+        value = str.toInt();
       }
     }
     f.close();
@@ -147,7 +169,7 @@ void updateFile(const String fileName, int value) {
 }
 
 /// OTA
-void getUpdated(int which, const char* url, const char* fingerprint) { 
+void getUpdated(int which, const char* url, const char* fingerprint) {
   if ((WiFi.status() == WL_CONNECTED)) {
     ticker.attach(0.7, tick);
     otaSignal = 0;
@@ -185,86 +207,86 @@ void getUpdated(int which, const char* url, const char* fingerprint) {
         break;
     }
   }
-} 
+}
 
 /// TIME
 #if NTP_SERVER == 1
-  void digitalClockDisplay() {
-    Serial.print(hour());
-    printDigits(minute());
-    printDigits(second());
-    Serial.print(" ");
-    Serial.print(day());
-    Serial.print(".");
-    Serial.print(month());
-    Serial.print(".");
-    Serial.print(year());
-    Serial.println();
-  }
-  
-  void printDigits(int digits) {
-    // utility for digital clock display: prints preceding colon and leading 0
-    Serial.print(":");
-    if (digits < 10)
-      Serial.print('0');
-    Serial.print(digits);
-  }
+void digitalClockDisplay() {
+  Serial.print(hour());
+  printDigits(minute());
+  printDigits(second());
+  Serial.print(" ");
+  Serial.print(day());
+  Serial.print(".");
+  Serial.print(month());
+  Serial.print(".");
+  Serial.print(year());
+  Serial.println();
+}
 
-  const int NTP_PACKET_SIZE = 48; // NTP time is in the first 48 bytes of message
-  byte packetBuffer[NTP_PACKET_SIZE]; //buffer to hold incoming & outgoing packets
-  
-  time_t getNtpTime() {
-    IPAddress ntpServerIP; // NTP server's ip address
-  
-    while (Udp.parsePacket() > 0) ; // discard any previously received packets
-    Serial.println("Transmit NTP Request");
-    // get a random server from the pool
-    WiFi.hostByName(ntpServerName, ntpServerIP);
-    Serial.print(ntpServerName);
-    Serial.print(": ");
-    Serial.println(ntpServerIP);
-    sendNTPpacket(ntpServerIP);
-    uint32_t beginWait = millis();
-    while (millis() - beginWait < 1500) {
-      int size = Udp.parsePacket();
-      if (size >= NTP_PACKET_SIZE) {
-        Serial.println("Receive NTP Response");
-        Udp.read(packetBuffer, NTP_PACKET_SIZE);  // read packet into the buffer
-        unsigned long secsSince1900;
-        // convert four bytes starting at location 40 to a long integer
-        secsSince1900 =  (unsigned long)packetBuffer[40] << 24;
-        secsSince1900 |= (unsigned long)packetBuffer[41] << 16;
-        secsSince1900 |= (unsigned long)packetBuffer[42] << 8;
-        secsSince1900 |= (unsigned long)packetBuffer[43];
-        return secsSince1900 - 2208988800UL + timeZone * SECS_PER_HOUR;
-      }
+void printDigits(int digits) {
+  // utility for digital clock display: prints preceding colon and leading 0
+  Serial.print(":");
+  if (digits < 10)
+    Serial.print('0');
+  Serial.print(digits);
+}
+
+const int NTP_PACKET_SIZE = 48; // NTP time is in the first 48 bytes of message
+byte packetBuffer[NTP_PACKET_SIZE]; //buffer to hold incoming & outgoing packets
+
+time_t getNtpTime() {
+  IPAddress ntpServerIP; // NTP server's ip address
+
+  while (Udp.parsePacket() > 0) ; // discard any previously received packets
+  Serial.println("Transmit NTP Request");
+  // get a random server from the pool
+  WiFi.hostByName(ntpServerName, ntpServerIP);
+  Serial.print(ntpServerName);
+  Serial.print(": ");
+  Serial.println(ntpServerIP);
+  sendNTPpacket(ntpServerIP);
+  uint32_t beginWait = millis();
+  while (millis() - beginWait < 1500) {
+    int size = Udp.parsePacket();
+    if (size >= NTP_PACKET_SIZE) {
+      Serial.println("Receive NTP Response");
+      Udp.read(packetBuffer, NTP_PACKET_SIZE);  // read packet into the buffer
+      unsigned long secsSince1900;
+      // convert four bytes starting at location 40 to a long integer
+      secsSince1900 =  (unsigned long)packetBuffer[40] << 24;
+      secsSince1900 |= (unsigned long)packetBuffer[41] << 16;
+      secsSince1900 |= (unsigned long)packetBuffer[42] << 8;
+      secsSince1900 |= (unsigned long)packetBuffer[43];
+      return secsSince1900 - 2208988800UL + timeZone * SECS_PER_HOUR;
     }
-    Serial.println("No NTP Response :-(");
-    return 0; // return 0 if unable to get the time
   }
-  
-  // send an NTP request to the time server at the given address
-  void sendNTPpacket(IPAddress& address)
-  {
-    Serial.println(F("sending NTP packet..."));
-    // set all bytes in the buffer to 0
-    memset(packetBuffer, 0, NTP_PACKET_SIZE);
-    // Initialize values needed to form NTP request
-    // (see URL above for details on the packets)
-    packetBuffer[0] = 0b11100011;   // LI, Version, Mode
-    packetBuffer[1] = 0;     // Stratum, or type of clock
-    packetBuffer[2] = 6;     // Polling Interval
-    packetBuffer[3] = 0xEC;  // Peer Clock Precision
-    // 8 bytes of zero for Root Delay & Root Dispersion
-    packetBuffer[12]  = 49;
-    packetBuffer[13]  = 0x4E;
-    packetBuffer[14]  = 49;
-    packetBuffer[15]  = 52;
-  
-    // all NTP fields have been given values, now
-    // you can send a packet requesting a timestamp:
-    Udp.beginPacket(address, 123); //NTP requests are to port 123
-    Udp.write(packetBuffer, NTP_PACKET_SIZE);
-    Udp.endPacket();
-  }
+  Serial.println("No NTP Response :-(");
+  return 0; // return 0 if unable to get the time
+}
+
+// send an NTP request to the time server at the given address
+void sendNTPpacket(IPAddress& address)
+{
+  Serial.println(F("sending NTP packet..."));
+  // set all bytes in the buffer to 0
+  memset(packetBuffer, 0, NTP_PACKET_SIZE);
+  // Initialize values needed to form NTP request
+  // (see URL above for details on the packets)
+  packetBuffer[0] = 0b11100011;   // LI, Version, Mode
+  packetBuffer[1] = 0;     // Stratum, or type of clock
+  packetBuffer[2] = 6;     // Polling Interval
+  packetBuffer[3] = 0xEC;  // Peer Clock Precision
+  // 8 bytes of zero for Root Delay & Root Dispersion
+  packetBuffer[12]  = 49;
+  packetBuffer[13]  = 0x4E;
+  packetBuffer[14]  = 49;
+  packetBuffer[15]  = 52;
+
+  // all NTP fields have been given values, now
+  // you can send a packet requesting a timestamp:
+  Udp.beginPacket(address, 123); //NTP requests are to port 123
+  Udp.write(packetBuffer, NTP_PACKET_SIZE);
+  Udp.endPacket();
+}
 #endif

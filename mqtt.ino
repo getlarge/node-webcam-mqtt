@@ -7,18 +7,14 @@ void mqttInit() {
   mqttClient.connect(((const char*)config.mqtt_client), ((const char*)config.mqtt_user), ((const char*)config.mqtt_password));
   //mqttClient.publish((const char*)strcat(config.mqtt_topic_out,"/logs" ), "Check 1-2 1-2");
   mqttClient.subscribe((const char*)strcat(config.mqtt_topic_in,"/+/+" ));
-  Serial.printf("Connecting to MQTT broker %s:%i as %s\n", (const char*)config.mqtt_server, atoi(config.mqtt_port), (const char*)deviceId);
+  Serial.printf("Connecting to MQTT broker %s:%i as %s\n", (const char*)config.mqtt_server, atoi(config.mqtt_port), (const char*)config.mqtt_client);
+  
 }
 
 boolean mqttConnect() {
   if (mqttClient.connect(((const char*)config.mqtt_client), ((const char*)config.mqtt_user), ((const char*)config.mqtt_password))) {
-#if DEBUG == 1
     Serial.println(F("MQTT connected"));
-#endif
-    //mqttClient.publish((const char*)strcat(config.mqtt_topic_out,"/logs" ), "Check 1-2 1-2");
-    //mqttClient.subscribe((const char*)strcat(config.mqtt_topic_in,"/+/+" ));
-    mqttClient.subscribe((const char*)strcat(config.mqtt_topic_in,"/#" ));
-    
+    mqttClient.subscribe((const char*)strcat(config.mqtt_topic_in,"/+/+" ));
   }
   return mqttClient.connected();
 }
@@ -27,7 +23,7 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
   char *str, *p;
   uint8_t i = 0;
   
-// check it protocol is right 
+// first sanity check
 //  if (topic != strstr(topic, config.mqtt_topic_in)) {
 //    Serial.print("faux protocole!");
 //    return;
@@ -61,13 +57,13 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
   Serial.printf("Received command : %s \n", (const char*)message.command);
   Serial.printf("For sensor : %s \n", (const char*)message.sensor);
   Serial.printf("Payload : %s \n", (const char*)message.payload);
-
+  /// Export the following in a parsing function later, like parseMessage(message)....
   if ( message.sensor = "camera" ) {
-    Serial.println("ca-me-ra-me-raaaaaaaa");
     if ( message.command = "capture" ) {
       if ( message.payload = "1" ) {
-        // get the payload to add options in the function ?
-        return serverCapture();
+         Serial.println("ca-me-ra-me-raaaaaaaa");
+        // get the payload to add parameters in the function ?
+        return serverCapture(1);
       }
     }
     if ( message.command = "timelapse" ) {
