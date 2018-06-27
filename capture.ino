@@ -33,9 +33,9 @@ void arducamInit() {
   //Change to JPEG capture mode and initialize the OV2640 module
   myCAM.set_format(JPEG);
   myCAM.InitCAM();
-  //setFPM(fpm);
-  myCAM.OV2640_set_JPEG_size(OV2640_320x240);
-  //setCamResolution(resolution);
+  setFPM(fpm);
+  //myCAM.OV2640_set_JPEG_size(OV2640_320x240);
+  setCamResolution(resolution);
   myCAM.clear_fifo_flag();
 
 //  Dir dir = SPIFFS.openDir("/pics");
@@ -96,7 +96,6 @@ void setCamResolution(int reso) {
 void setFPM(int interv) {
   //fpm = interv;
   Serial.printf("FPM set to %i. \n", interv);
-  updateFile(fpmFile, interv);
   switch (interv) {
     case 0:
       minDelayBetweenframes = 5000;
@@ -125,8 +124,6 @@ void camCapture(ArduCAM myCAM){
   #if WEB_SERVER == 1
   WiFiClient client = server.client();
   #endif
-  digitalWrite(BUILTIN_LED, LOW);
-
   size_t len = myCAM.read_fifo_length();
   if (len >= 0x07ffff){
     Serial.println("Over size.");
@@ -159,45 +156,48 @@ void camCapture(ArduCAM myCAM){
       #endif
       if ( base64.encode(&buffer[0], will_copy) == RBASE64_STATUS_OK) {
          //Serial.println(base64.result());
-         mqttClient.publish((const char*)config.mqtt_topic_out, base64.result(), sizeof(base64.result()));
+         mqttClient.publish((const char*)strcat(config.mqtt_topic_out, "/camera/send"), base64.result(), sizeof(base64.result()));
       }
       //mqttClient.publish(mqttTopicOut, &buffer[0], will_copy);
-      len -= will_copy;
       #if DEBUG_PAYLOAD == 1
         Serial.print(F("Publish buffer: "));
         Serial.write((const uint8_t *)&buffer[0], sizeof(will_copy));
         Serial.write(&buffer[0], will_copy);
       #endif
+      len -= will_copy;
+      
     }
+  Serial.printf("after capture heap size: %u\n", ESP.getFreeHeap());
   //if (!mqttClient.connected()) break;
-  mqttClient.publish((const char*)config.mqtt_topic_out, "eof");
+  mqttClient.publish((const char*)strcat(config.mqtt_topic_out, "/camera/eof"), "1");
   myCAM.CS_HIGH();
 }
 
 void serverCapture(){
+  transmitNow = false;
   start_capture();
+  digitalWrite(STATE_LED, LOW);
   Serial.println("CAM Capturing");
-
+  mqttClient.publish((const char*)strcat(config.mqtt_topic_out, "/camera/eof"), "0");
   int total_time = 0;
-
   total_time = millis();
   while (!myCAM.get_bit(ARDUCHIP_TRIG, CAP_DONE_MASK));
   total_time = millis() - total_time;
-  Serial.print("capture total_time used (in miliseconds):");
+  Serial.print("Capturing time (in miliseconds):");
   Serial.println(total_time, DEC);
-  
   total_time = 0;
-  
   Serial.println("CAM Capture Done!");
   total_time = millis();
   camCapture(myCAM);
   total_time = millis() - total_time;
-  Serial.print("send total_time used (in miliseconds):");
+  Serial.print("Sending time (in miliseconds):");
   Serial.println(total_time, DEC);
-  Serial.println("CAM send Done!");
+  transmitNow = true;
+  digitalWrite(STATE_LED, HIGH);
 }
 
 void serverStream(){
+  transmitNow = false;
   #if WEB_SERVER == 1
     WiFiClient client = server.client();
     String response = "HTTP/1.1 200 OK\r\n";
@@ -240,7 +240,6 @@ void serverStream(){
       len -= will_copy;
     }
     myCAM.CS_HIGH();
-    
   }
 }
 

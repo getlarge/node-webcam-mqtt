@@ -17,7 +17,7 @@ void setPins(){
 }
 
 void checkButton(int context) {
-  if ( context = 0 ) {
+  if ( context == 0 ) {
     debouncer.update();
     int value = debouncer.read();
     if (value == LOW) {
@@ -27,7 +27,7 @@ void checkButton(int context) {
         value == HIGH;
     }
   }
-  if ( context = 1 ) {
+  if ( context == 1 ) {
     debouncer.update();
     int value = debouncer.read();
     if (value == LOW) {
@@ -41,10 +41,10 @@ void checkButton(int context) {
 }
 
 void setReboot() { // Boot to sketch
-//    pinMode(STATE_LED, OUTPUT);
-//    digitalWrite(STATE_LED, HIGH);
-//    pinMode(D8, OUTPUT);
-//    digitalWrite(D8, LOW);
+    pinMode(STATE_LED, OUTPUT);
+    digitalWrite(STATE_LED, HIGH);
+    pinMode(D8, OUTPUT);
+    digitalWrite(D8, LOW);
     Serial.println(F("Pins set for reboot"));
 //    Serial.flush();
 //    yield(); yield(); delay(500);

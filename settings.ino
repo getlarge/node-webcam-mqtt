@@ -99,31 +99,34 @@ void configManager() {
   }
 
   else {
-   /// todo : check if wificlient is connected
     if (shouldSaveConfig) {
+      //config.mqtt_client = ;
+      strcpy(config.mqtt_client, deviceId); 
       strcpy(config.mqtt_server, custom_mqtt_server.getValue()); 
       strcpy(config.mqtt_port, custom_mqtt_port.getValue());
       strcpy(config.mqtt_user, custom_mqtt_user.getValue()); 
       strcpy(config.mqtt_password, custom_mqtt_password.getValue());
+      strcpy(config.mqtt_topic_in,deviceId); 
+      strcat(config.mqtt_topic_in,inPrefix); 
+      strcpy(config.mqtt_topic_out,deviceId); 
+      strcat(config.mqtt_topic_out,outPrefix);
       Serial.println(F("Saving config"));
       StaticJsonDocument<256> doc; 
       JsonObject& obj = doc.to<JsonObject>();
       obj["mqtt_server"] = config.mqtt_server;
       obj["mqtt_port"] = config.mqtt_port;
+      obj["mqtt_client"] = config.mqtt_client;
       obj["mqtt_user"] = config.mqtt_user;
       obj["mqtt_password"] = config.mqtt_password;
+      obj["mqtt_topic_in"] = config.mqtt_topic_in;
+      obj["mqtt_topic_out"] = config.mqtt_topic_out;
       //obj.set<char>("mqtt_server", mqtt_server);
-      strcpy(config.mqtt_topic_in,deviceId); 
-      strcat(config.mqtt_topic_in,in); 
-      strcpy(config.mqtt_topic_out,deviceId); 
-      strcat(config.mqtt_topic_out,out);
       File configFile = SPIFFS.open("/config.json", "w");
       if (!configFile) {
         Serial.println(F("Failed to open config file"));
       }
-      // ArduinJSON v6
       if (serializeJsonPretty(doc, Serial) == 0) {
-        Serial.println(F("Failed to write to file"));
+        Serial.println(F("Failed to write to Serial"));
       } 
       if (serializeJson(doc, configFile) == 0) {
         Serial.println(F("Failed to write to file"));

@@ -9,13 +9,13 @@
 #define BAUD_RATE 115200
 
 bool resetConfig = false, wifiResetConfig = false; // set to true to reset FS and/or Wifimanager, don't forget to set this to false after
-unsigned long configTimeout1 = 300, configTimeout2 = 180, lastMqttReconnectAttempt = 0, lastWifiReconnectAttempt = 0;
-bool shouldSaveConfig = true, executeOnce = false, manualConfig = false;
+unsigned long configTimeout1 = 300, configTimeout2 = 180, minDelayBetweenframes, reconnectInterval = 1000; 
+unsigned long lastMqttReconnectAttempt = 0, lastWifiReconnectAttempt = 0, lastPictureAttempt;
+bool shouldSaveConfig = true, executeOnce = false, manualConfig = false, transmitNow = true;
 int configCount = 0, wifiFailCount = 0, mqttFailCount = 0, configMode = 0;
-bool transmitNow = false;
 
 // ESP
-#define OTA_BUTTON_PIN D0
+#define OTA_BUTTON_PIN D3
 #define STATE_LED D4
 #define CS 16 //// ARDUCAM
 
@@ -31,21 +31,15 @@ char devicePass[30]="motdepasse", deviceId[20], devicePrefix[8] = "Camera";
 struct mqttConfig {
   char mqtt_server[40];
   char mqtt_port[6];
+  char mqtt_client[20];
   char mqtt_user[20];
   char mqtt_password[30];
   char mqtt_topic_out[50];
   char mqtt_topic_in[50];
 };
-
-char out[20]= "/camera/send", out1[20]= "/camera/eof";
-char in[10]= "/in/#";
-//char in[10]= "/in";
-
-//const char *httpServer; int httpPort;
-//const char *postDestination;
-//const char* otaUrl = "https://app.aloes.io/firmware/NodeWebcam.ino.bin";
-//const char* currentVersion = "4712";
-//const char* httpsFingerprint = "1D AE 00 E7 68 70 87 09 A6 1D 27 76 F5 85 C0 F3 AB F2 60 9F"; 
+char outPrefix[20]= "/out", out1[20]= "/camera/eof";
+char inPrefix[10]= "/in";
+//char in[10]= "/in/#";
 
 static const size_t bufferSize = 2048; // 4096; //2048; //1024;
 
@@ -56,10 +50,8 @@ int fileTotalKB = 0;
 int fileUsedKB = 0; 
 int fileCount = 0;
 String errMsg = "";
-int resolution = 4; int fpm = 0; 
+int resolution = 4; int fpm = 1; 
 int otaSignal = 0;
-int minDelayBetweenframes, interval1 = 1000; 
-
 
 //// NTP
 static const char ntpServerName[] = "fr.pool.ntp.org";

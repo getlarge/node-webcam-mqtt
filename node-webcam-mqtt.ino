@@ -143,12 +143,11 @@ void loadConfig() {
         JsonObject& obj = doc.as<JsonObject>();
         strlcpy(config.mqtt_server, obj["mqtt_server"] | "server2.getlarge.eu", sizeof(config.mqtt_server));
         strlcpy(config.mqtt_port, obj["mqtt_port"] | "4006",  sizeof(config.mqtt_port));         
+        strlcpy(config.mqtt_client, obj["mqtt_client"] | "node-webcam",  sizeof(config.mqtt_client));         
         strlcpy(config.mqtt_user, obj["mqtt_user"] | "",  sizeof(config.mqtt_user));         
-        strlcpy(config.mqtt_password, obj["mqtt_password"] | "",  sizeof(config.mqtt_password));         
-        strcpy(config.mqtt_topic_in,deviceId); 
-        strcat(config.mqtt_topic_in,in); 
-        strcpy(config.mqtt_topic_out,deviceId); 
-        strcat(config.mqtt_topic_out,out);
+        strlcpy(config.mqtt_password, obj["mqtt_password"] | "",  sizeof(config.mqtt_password));
+        strlcpy(config.mqtt_topic_in, obj["mqtt_topic_in"] | "node-webcam-in",  sizeof(config.mqtt_topic_in));
+        strlcpy(config.mqtt_topic_out, obj["mqtt_topic_out"] | "node-webcam-out",  sizeof(config.mqtt_topic_out));
         if (serializeJsonPretty(doc, Serial) == 0) {
           Serial.println(F("Failed to write to file"));
         } 
@@ -200,23 +199,19 @@ void loop() {
   if ( ! executeOnce) {
     executeOnce = true;
   }
-  #if WEB_SERVER == 1
-    server.handleClient();
-  #endif
   checkButton(0);
-  
-  if ( WiFi.status() != WL_CONNECTED) { // WiFiMulti.run() != WL_CONNECTED
-    ++wifiFailCount;
-    ticker.attach(0.5, tick);
-    if (wifiFailCount == 10) {
-      configManager();
-    }  
-  }
+//  if ( WiFi.status() != WL_CONNECTED) { // WiFiMulti.run() != WL_CONNECTED
+//    ++wifiFailCount;
+//    ticker.attach(0.5, tick);
+//    if (wifiFailCount == 10) {
+//      configManager();
+//    }  
+//  }
   if (!mqttClient.connected()) {
     long now = millis();
     checkButton(0);
     ticker.attach(0.3, tick);
-    if (now - lastMqttReconnectAttempt > interval1) {
+    if (now - lastMqttReconnectAttempt > reconnectInterval) {
       lastMqttReconnectAttempt = now;
       ++mqttFailCount;
       if (mqttConnect()) {
@@ -231,6 +226,12 @@ void loop() {
     }
   }
   else {
+    mqttClient.loop();
+    long now = millis();
+
+    #if WEB_SERVER == 1
+      server.handleClient();
+    #endif
     #if NTP_SERVER == 1
       if (timeStatus() != timeNotSet) {
         if (now() != prevDisplay) { //update the display only if time has changed
@@ -239,9 +240,9 @@ void loop() {
         }
       }
     #endif
-    if (transmitNow) { // checks if the buffer is full
+    if ((now - lastPictureAttempt > minDelayBetweenframes) && transmitNow == true) {
+      lastPictureAttempt = now;
+      //serverCapture();
     }
-    mqttClient.loop();
-  }
-    
+  }   
 }

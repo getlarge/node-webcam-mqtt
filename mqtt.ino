@@ -4,63 +4,64 @@
 void mqttInit() {
   mqttClient.setServer(config.mqtt_server, atoi(config.mqtt_port));
   mqttClient.setCallback(mqttCallback);
-  mqttClient.connect(((const char*)deviceId), ((const char*)config.mqtt_user), ((const char*)config.mqtt_password));
-  mqttClient.publish((const char*)config.mqtt_topic_out, "Check 1-2 1-2");
-  mqttClient.subscribe((const char*)config.mqtt_topic_in);
+  mqttClient.connect(((const char*)config.mqtt_client), ((const char*)config.mqtt_user), ((const char*)config.mqtt_password));
+  mqttClient.publish((const char*)strcat(config.mqtt_topic_out,"/logs" ), "Check 1-2 1-2");
+  mqttClient.subscribe((const char*)strcat(config.mqtt_topic_in,"/#" ));
   Serial.printf("Connecting to MQTT broker %s:%i as %s\n", (const char*)config.mqtt_server, atoi(config.mqtt_port), (const char*)deviceId);
 }
 
 boolean mqttConnect() {
-  if (mqttClient.connect(((const char*)deviceId), ((const char*)config.mqtt_user), ((const char*)config.mqtt_password))) {
+  if (mqttClient.connect(((const char*)config.mqtt_client), ((const char*)config.mqtt_user), ((const char*)config.mqtt_password))) {
 #if DEBUG == 1
     Serial.println(F("MQTT connected"));
 #endif
-    mqttClient.publish((const char*)config.mqtt_topic_out, "Check 1-2 1-2");
-    mqttClient.subscribe((const char*)config.mqtt_topic_in);
+    mqttClient.publish((const char*)strcat(config.mqtt_topic_out,"/logs" ), "Check 1-2 1-2");
+    //mqttClient.subscribe((const char*)strcat(config.mqtt_topic_in,"/+/+/+" ));
+    mqttClient.subscribe((const char*)strcat(config.mqtt_topic_in,"/#" ));
+    
   }
   return mqttClient.connected();
 }
 
 void mqttCallback(char* topic, byte* payload, unsigned int length) {
-
   char *str, *p;
   uint8_t i = 0;
   const char *sensor;
-  const char *comm;
-  
+  const char *command;
+  Serial.printf("Message arrived [%s] %s \n", (const char*)topic, (const char*)(char*)payload);
 // check it protocol is right 
 //  if (topic != strstr(topic, mqttTopicIn)) {
 //    return false;
 //    Serial.print("faux!");
 //  }
-//  Serial.printf("Message arrived [%s] %s \n", (const char*)topic, (const char*)(char*)payload);
 
 // parse the MQTT protocol
   for (str = strtok_r(topic + 1, "/", &p); str && i <= 2;
        str = strtok_r(NULL, "/", &p)) {
     switch (i) {
       case 0: {
-          //device id
-          break;
-        }
+        //deviceId
+        break;
+      }
       case 1: {
-          // "in"
-          break;
-        }
+        // "inPrefix "
+        break;
+      }
       case 2: {
-          comm = str;
-          //mSetCommand(message, command);
-          break;
-        }
+        sensor = str;
+        break;
+      }
+      case 3: {
+        command = str;
+        break;
+      }
     }
     i++;
   }
-  Serial.print(comm);
-  
   payload[length] = '\0';
   String s = String((char*)payload);
   
-  if ( comm == "capture" ) {
+  if ( sensor == "camera" ) {
     if (s == "capture") {
       serverCapture();
     }
@@ -69,7 +70,7 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
     }
   }
 
-  if ( comm == "reso" ) {
+  if ( command == "reso" ) {
     int reso = s.toInt();
     Serial.print("reso");
     Serial.println(reso);
@@ -79,7 +80,7 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
     }
   }
 
-  if ( comm == "fpm" ) {
+  if ( command == "fpm" ) {
     int fpm = s.toInt();
     Serial.print("fpm");
     Serial.println(fpm);
@@ -89,7 +90,7 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
     }
   }
 
-  if ( comm == "system" ) {
+  if ( command == "system" ) {
     if (s == "update") {
       //getUpdated();
     }
