@@ -36,22 +36,23 @@
 #endif
 ESP8266WiFiMulti WiFiMulti;
 #if CLIENT_SECURE == 1
-  WiFiClientSecure MqttWifiClient;
+  WiFiClientSecure wifiClient;
 #endif
 #if CLIENT_SECURE == 0
-  WiFiClient MqttWifiClient;
+  WiFiClient wifiClient;
 #endif
 #if WEB_SERVER == 1
   ESP8266WebServer server(80);
 #endif
-PubSubClient mqttClient(MqttWifiClient);
+PubSubClient mqttClient(wifiClient);
 ArduCAM myCAM(OV2640, CS);
 Bounce debouncer = Bounce();
 Ticker ticker;
-//rBase64generic<2048> base64;
 rBase64generic<bufferSize> base64;
+//rBase64generic<2048> base64;
 
 mqttConfig config; 
+messageFormat message; 
 
 void tick();
 void setPins();
@@ -240,9 +241,11 @@ void loop() {
         }
       }
     #endif
-    if ((now - lastPictureAttempt > minDelayBetweenframes) && transmitNow == true) {
-      lastPictureAttempt = now;
-      //serverCapture();
+    if (timelapse == true) {
+      if ((now - lastPictureAttempt > minDelayBetweenframes) && transmitNow == true) {
+        lastPictureAttempt = now;
+        serverCapture();
+      }
     }
   }   
 }

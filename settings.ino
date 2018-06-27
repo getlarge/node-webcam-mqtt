@@ -9,6 +9,7 @@ void saveConfigCallback () {
 
 void configModeCallback (WiFiManager *myWiFiManager) {
  // delay(1000);
+ // check mqtt connection ?
   Serial.println(F("Entered config mode"));
   //  if((WiFi.status() == WL_CONNECTED)) {
 }
@@ -65,15 +66,15 @@ void configManager() {
   if (( !(const char*)config.mqtt_server ) || (configCount > 1 && manualConfig == true)) {
     Serial.println(F("Manual config access"));
     wifiManager.setConfigPortalTimeout(configTimeout1);
-    //wifiManager.startConfigPortal(deviceId, devicePass);
-    wifiManager.startConfigPortal(deviceId);  
+    wifiManager.startConfigPortal(deviceId, devicePass);
+    //wifiManager.startConfigPortal(deviceId);  
   }
 
   // When wifi is already connected but connection got interrupted ...
   if (((configCount > 1 && mqttClient.connected() && WiFi.status() == WL_CONNECTED) || (configCount > 1 && !mqttClient.connected() && WiFi.status() == WL_CONNECTED)) && manualConfig == false) { 
     Serial.println(F("User config access"));
     wifiManager.setConfigPortalTimeout(configTimeout2);
-    wifiManager.startConfigPortal(deviceId);
+    wifiManager.startConfigPortal(deviceId, devicePass);
     long now = millis();
     if (now - lastMqttReconnectAttempt > 5000) {
       lastMqttReconnectAttempt = now;
@@ -91,7 +92,7 @@ void configManager() {
   if (WiFi.status() != WL_CONNECTED) {
     Serial.println(F("Auto config access"));
     //wifiManager.setConfigPortalTimeout(configTimeout1);
-    if (!wifiManager.autoConnect(deviceId)) {
+    if (!wifiManager.autoConnect(deviceId, devicePass)) {
       Serial.println(F("Connection failure --> Timeout"));
       delay(3000);
       setReboot();
@@ -108,8 +109,10 @@ void configManager() {
       strcpy(config.mqtt_password, custom_mqtt_password.getValue());
       strcpy(config.mqtt_topic_in,deviceId); 
       strcat(config.mqtt_topic_in,inPrefix); 
+      //strcat(config.mqtt_topic_in,message.in_prefix); 
       strcpy(config.mqtt_topic_out,deviceId); 
       strcat(config.mqtt_topic_out,outPrefix);
+      //strcat(config.mqtt_topic_in,message.out_prefix); 
       Serial.println(F("Saving config"));
       StaticJsonDocument<256> doc; 
       JsonObject& obj = doc.to<JsonObject>();

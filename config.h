@@ -11,7 +11,7 @@
 bool resetConfig = false, wifiResetConfig = false; // set to true to reset FS and/or Wifimanager, don't forget to set this to false after
 unsigned long configTimeout1 = 300, configTimeout2 = 180, minDelayBetweenframes, reconnectInterval = 1000; 
 unsigned long lastMqttReconnectAttempt = 0, lastWifiReconnectAttempt = 0, lastPictureAttempt;
-bool shouldSaveConfig = true, executeOnce = false, manualConfig = false, transmitNow = true;
+bool shouldSaveConfig = true, executeOnce = false, manualConfig = false, timelapse = false, transmitNow = true, transmitStream = false;
 int configCount = 0, wifiFailCount = 0, mqttFailCount = 0, configMode = 0;
 
 // ESP
@@ -28,6 +28,16 @@ int configCount = 0, wifiFailCount = 0, mqttFailCount = 0, configMode = 0;
 
 char devicePass[30]="motdepasse", deviceId[20], devicePrefix[8] = "Camera";
 
+struct messageFormat {
+  char id[40];
+  const char *deviceId;
+  char in_prefix[10] = "/in";
+  char out_prefix[10] = "/out";
+  char* sensor;
+  char* command;
+  char* payload;
+};
+
 struct mqttConfig {
   char mqtt_server[40];
   char mqtt_port[6];
@@ -37,7 +47,8 @@ struct mqttConfig {
   char mqtt_topic_out[50];
   char mqtt_topic_in[50];
 };
-char outPrefix[20]= "/out", out1[20]= "/camera/eof";
+
+char outPrefix[20]= "/out";
 char inPrefix[10]= "/in";
 //char in[10]= "/in/#";
 

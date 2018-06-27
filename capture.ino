@@ -156,7 +156,7 @@ void camCapture(ArduCAM myCAM){
       #endif
       if ( base64.encode(&buffer[0], will_copy) == RBASE64_STATUS_OK) {
          //Serial.println(base64.result());
-         mqttClient.publish((const char*)strcat(config.mqtt_topic_out, "/camera/send"), base64.result(), sizeof(base64.result()));
+         mqttClient.publish((const char*)strcat(config.mqtt_topic_out, "/camera/capture"), base64.result(), sizeof(base64.result()));
       }
       //mqttClient.publish(mqttTopicOut, &buffer[0], will_copy);
       #if DEBUG_PAYLOAD == 1
@@ -165,10 +165,9 @@ void camCapture(ArduCAM myCAM){
         Serial.write(&buffer[0], will_copy);
       #endif
       len -= will_copy;
-      
+   // if (!mqttClient.connected()) break;
     }
   Serial.printf("after capture heap size: %u\n", ESP.getFreeHeap());
-  //if (!mqttClient.connected()) break;
   mqttClient.publish((const char*)strcat(config.mqtt_topic_out, "/camera/eof"), "1");
   myCAM.CS_HIGH();
 }

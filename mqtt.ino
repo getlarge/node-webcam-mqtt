@@ -5,8 +5,8 @@ void mqttInit() {
   mqttClient.setServer(config.mqtt_server, atoi(config.mqtt_port));
   mqttClient.setCallback(mqttCallback);
   mqttClient.connect(((const char*)config.mqtt_client), ((const char*)config.mqtt_user), ((const char*)config.mqtt_password));
-  mqttClient.publish((const char*)strcat(config.mqtt_topic_out,"/logs" ), "Check 1-2 1-2");
-  mqttClient.subscribe((const char*)strcat(config.mqtt_topic_in,"/#" ));
+  //mqttClient.publish((const char*)strcat(config.mqtt_topic_out,"/logs" ), "Check 1-2 1-2");
+  mqttClient.subscribe((const char*)strcat(config.mqtt_topic_in,"/+/+" ));
   Serial.printf("Connecting to MQTT broker %s:%i as %s\n", (const char*)config.mqtt_server, atoi(config.mqtt_port), (const char*)deviceId);
 }
 
@@ -15,8 +15,8 @@ boolean mqttConnect() {
 #if DEBUG == 1
     Serial.println(F("MQTT connected"));
 #endif
-    mqttClient.publish((const char*)strcat(config.mqtt_topic_out,"/logs" ), "Check 1-2 1-2");
-    //mqttClient.subscribe((const char*)strcat(config.mqtt_topic_in,"/+/+/+" ));
+    //mqttClient.publish((const char*)strcat(config.mqtt_topic_out,"/logs" ), "Check 1-2 1-2");
+    //mqttClient.subscribe((const char*)strcat(config.mqtt_topic_in,"/+/+" ));
     mqttClient.subscribe((const char*)strcat(config.mqtt_topic_in,"/#" ));
     
   }
@@ -26,17 +26,15 @@ boolean mqttConnect() {
 void mqttCallback(char* topic, byte* payload, unsigned int length) {
   char *str, *p;
   uint8_t i = 0;
-  const char *sensor;
-  const char *command;
-  Serial.printf("Message arrived [%s] %s \n", (const char*)topic, (const char*)(char*)payload);
+  
 // check it protocol is right 
-//  if (topic != strstr(topic, mqttTopicIn)) {
-//    return false;
-//    Serial.print("faux!");
+//  if (topic != strstr(topic, config.mqtt_topic_in)) {
+//    Serial.print("faux protocole!");
+//    return;
 //  }
 
-// parse the MQTT protocol
-  for (str = strtok_r(topic + 1, "/", &p); str && i <= 2;
+// parse the MQTT protocol ( +deviceId/+inPrefix/+sensor/+command )
+  for (str = strtok_r(topic + 1, "/", &p); str && i <= 3;
        str = strtok_r(NULL, "/", &p)) {
     switch (i) {
       case 0: {
@@ -44,68 +42,89 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
         break;
       }
       case 1: {
-        // "inPrefix "
+        //inPrefix = str;
         break;
       }
       case 2: {
-        sensor = str;
+        message.sensor = str;
         break;
       }
       case 3: {
-        command = str;
+        message.command = str;
         break;
       }
     }
     i++;
   }
   payload[length] = '\0';
-  String s = String((char*)payload);
-  
-  if ( sensor == "camera" ) {
-    if (s == "capture") {
-      serverCapture();
+  message.payload = ((char*)payload);
+  Serial.printf("Received command : %s \n", (const char*)message.command);
+  Serial.printf("For sensor : %s \n", (const char*)message.sensor);
+  Serial.printf("Payload : %s \n", (const char*)message.payload);
+
+  if ( message.sensor = "camera" ) {
+    Serial.println("ca-me-ra-me-raaaaaaaa");
+    if ( message.command = "capture" ) {
+      if ( message.payload = "1" ) {
+        // get the payload to add options in the function ?
+        return serverCapture();
+      }
     }
-    if (s == "stream") {
-      serverStream();
+    if ( message.command = "timelapse" ) {
+      if ( message.payload = "1" ) {
+        // get from the payload to add timing options ?
+        timelapse = true;
+        return;
+      }
+    }
+    if ( message.command = "stream" ) {
+      if ( message.payload = "1" ) {
+        transmitStream = true;
+        return serverStream();
+      }
+      if ( message.payload = "0" ) {
+       transmitStream = false;
+       return;
+      }
+    }
+  }
+  if ( message.sensor = "system" ) {
+    if ( message.command = "reso" ) {
+      //int reso = message.payload.toInt();
+      int reso = atoi(message.payload);
+      Serial.print("reso");
+      Serial.println(reso);
+      if ( reso >= 0 || reso <= 8 ) {
+        setCamResolution(reso);
+        return updateFile(resFile, reso);
+      }
+    }
+    if ( message.command = "fpm" ) {
+      int fpm = atoi(message.payload); //.toInt();
+      Serial.print("fpm");
+      Serial.println(fpm);
+      if ( fpm >= 0 || fpm <= 4 ) {
+        setFPM(fpm);
+        return updateFile(fpmFile, fpm);
+      }
+    }
+    if ( message.command = "update" ) {
+      if (message.payload = "ota") {
+        //return getUpdated();
+      }
+      for (int i = 0; i < length; i++) {
+        Serial.print((char)payload[i]);
+        //strtok(s, "-");
+        // extract otaSignal, otaType, otaUrl, and fingerprint ( for httpsUpdate )
+        // if the int correspond to waited value, update otaSignal, otaFile and setReboot()
+      }
     }
   }
 
-  if ( command == "reso" ) {
-    int reso = s.toInt();
-    Serial.print("reso");
-    Serial.println(reso);
-    if ( reso >= 0 || reso <= 8 ) {
-      setCamResolution(reso);
-      updateFile(resFile, reso);
-    }
+  else {
+    //mqttError(1);
+    //return;
   }
-
-  if ( command == "fpm" ) {
-    int fpm = s.toInt();
-    Serial.print("fpm");
-    Serial.println(fpm);
-    if ( fpm >= 0 || fpm <= 4 ) {
-      setFPM(fpm);
-      updateFile(fpmFile, fpm);
-    }
-  }
-
-  if ( command == "system" ) {
-    if (s == "update") {
-      //getUpdated();
-    }
-    for (int i = 0; i < length; i++) {
-      Serial.print((char)payload[i]);
-      //strtok(s, "-");
-      // extract otaSignal, otaType, otaUrl, and fingerprint ( for httpsUpdate )
-      // if the int correspond to waited value, update otaSignal, otaFile and setReboot()
-    }
-  }
-
-//  else {
-//    mqttError(1);
-//    
-//  }
 
 }
 
