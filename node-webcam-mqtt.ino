@@ -65,6 +65,7 @@ void checkFile(const String fileName, int value);
 void updateFile(const String fileName, int value);
 void getUpdated(int which, const char* url, const char* fingerprint);
 void setPinsRebootUart();
+void connectWifi();
 void saveConfigCallback();
 void configModeCallback (WiFiManager *myWiFiManager);
 void configManager();
@@ -136,23 +137,35 @@ void loadConfig() {
         std::unique_ptr<char[]> buf(new char[size]);
         configFile.readBytes(buf.get(), size);
         Serial.println(sizeof(buf.get()));
-        StaticJsonDocument<(objBufferSize * 2)> doc;
-        DeserializationError error = deserializeJson(doc, buf.get());
-        if (error) {
+        // for ArduinoJson v6
+        //StaticJsonDocument<(objBufferSize * 2)> doc;
+//        DeserializationError error = deserializeJson(doc, buf.get());
+//        if (error) {
+//          Serial.println(F("Failed to load json config"));
+//        }
+//        JsonObject& obj = doc.as<JsonObject>();
+//        if (serializeJsonPretty(doc, Serial) == 0) {
+//          Serial.println(F("Failed to write to file"));
+//        } 
+        // for ArduinoJson v5
+        StaticJsonBuffer<(objBufferSize * 2)> doc;
+        JsonObject& obj = doc.parseObject(buf.get());
+        obj.printTo(Serial);
+        if (obj.success()) {
+          strlcpy(config.mqtt_server, obj["mqtt_server"] | "server2.getlarge.eu", sizeof(config.mqtt_server));
+          strlcpy(config.mqtt_port, obj["mqtt_port"] | "4006",  sizeof(config.mqtt_port));         
+          strlcpy(config.mqtt_client, obj["mqtt_client"] | SKETCH_NAME,  sizeof(config.mqtt_client));         
+          strlcpy(config.mqtt_user, obj["mqtt_user"] | "",  sizeof(config.mqtt_user));         
+          strlcpy(config.mqtt_password, obj["mqtt_password"] | "",  sizeof(config.mqtt_password));
+          strlcpy(config.mqtt_topic_in, obj["mqtt_topic_in"] | "node-webcam-in",  sizeof(config.mqtt_topic_in));
+          strlcpy(config.mqtt_topic_out, obj["mqtt_topic_out"] | "node-webcam-out",  sizeof(config.mqtt_topic_out));
+          strlcpy(captureTopic, config.mqtt_topic_out, sizeof(captureTopic));
+          strcat(captureTopic, "/capture");
+          Serial.println();
+        }
+        else {
           Serial.println(F("Failed to load json config"));
         }
-        JsonObject& obj = doc.as<JsonObject>();
-        strlcpy(config.mqtt_server, obj["mqtt_server"] | "server2.getlarge.eu", sizeof(config.mqtt_server));
-        strlcpy(config.mqtt_port, obj["mqtt_port"] | "4006",  sizeof(config.mqtt_port));         
-        strlcpy(config.mqtt_client, obj["mqtt_client"] | SKETCH_NAME,  sizeof(config.mqtt_client));         
-        strlcpy(config.mqtt_user, obj["mqtt_user"] | "",  sizeof(config.mqtt_user));         
-        strlcpy(config.mqtt_password, obj["mqtt_password"] | "",  sizeof(config.mqtt_password));
-        strlcpy(config.mqtt_topic_in, obj["mqtt_topic_in"] | "node-webcam-in",  sizeof(config.mqtt_topic_in));
-        strlcpy(config.mqtt_topic_out, obj["mqtt_topic_out"] | "node-webcam-out",  sizeof(config.mqtt_topic_out));
-        if (serializeJsonPretty(doc, Serial) == 0) {
-          Serial.println(F("Failed to write to file"));
-        } 
-        Serial.println();
       }
     }
   } else {
@@ -174,8 +187,14 @@ void setup() {
   checkFile(resFile, resolution);
   arducamInit();
     getDeviceId();
+    
+  #if WEB_SERVER == 0
+    configManager();
+  #elif WEB_SERVER == 1
+    connectWifi();
+  #endif
 
-  configManager();
+  
   delay(1000);
   #if NTP_SERVER == 1
     Serial.println(F("Starting UDP"));
@@ -199,10 +218,11 @@ void setup() {
 }
 
 void loop() {
+  checkButton(0);
+
   if ( ! executeOnce) {
     executeOnce = true;
   }
-  checkButton(0);
 //  if ( WiFi.status() != WL_CONNECTED) { // WiFiMulti.run() != WL_CONNECTED
 //    ++wifiFailCount;
 //    ticker.attach(0.5, tick);
@@ -210,6 +230,7 @@ void loop() {
 //      configManager();
 //    }  
 //  }
+  #if WEB_SERVER == 0
   if (!mqttClient.connected()) {
     long now = millis();
     checkButton(0);
@@ -228,13 +249,18 @@ void loop() {
       }
     }
   }
+  #endif
+
   else {
-    mqttClient.loop();
+    #if WEB_SERVER == 0
+      mqttClient.loop();
+    #endif
     long now = millis();
 
     #if WEB_SERVER == 1
       server.handleClient();
     #endif
+    
     #if NTP_SERVER == 1
       if (timeStatus() != timeNotSet) {
         if (now() != prevDisplay) { //update the display only if time has changed
@@ -243,10 +269,11 @@ void loop() {
         }
       }
     #endif
+    
     if (timelapse == true) {
       if ((now - lastPictureAttempt > minDelayBetweenframes) && transmitNow == true) {
         lastPictureAttempt = now;
-        serverCapture(1);
+        return serverCapture();
       }
     }
   }   

@@ -103,19 +103,23 @@ void configManager() {
     
     if (shouldSaveConfig) {
       //config.mqtt_client = ;
-      strcpy(config.mqtt_server, custom_mqtt_server.getValue()); 
-      strcpy(config.mqtt_port, custom_mqtt_port.getValue());
-      strcpy(config.mqtt_user, custom_mqtt_user.getValue()); 
-      strcpy(config.mqtt_password, custom_mqtt_password.getValue());
-      strcpy(config.mqtt_topic_in,config.mqtt_client); 
+      strlcpy(config.mqtt_server, custom_mqtt_server.getValue(), sizeof(config.mqtt_server));
+      strlcpy(config.mqtt_port, custom_mqtt_port.getValue(),  sizeof(config.mqtt_port));         
+      strlcpy(config.mqtt_user, custom_mqtt_user.getValue(),  sizeof(config.mqtt_user));         
+      strlcpy(config.mqtt_password, custom_mqtt_password.getValue(),  sizeof(config.mqtt_password));
+      strlcpy(config.mqtt_topic_in, config.mqtt_client,  sizeof(config.mqtt_topic_in));
       strcat(config.mqtt_topic_in,message.in_prefix); 
-      strcpy(config.mqtt_topic_out,config.mqtt_client); 
+      strlcpy(config.mqtt_topic_out, config.mqtt_client,  sizeof(config.mqtt_topic_out));
       strcat(config.mqtt_topic_out,message.out_prefix); 
-        
+
       //strcat(config.mqtt_topic_in,message.out_prefix); 
       Serial.println(F("Saving config"));
-      StaticJsonDocument<objBufferSize> doc; 
-      JsonObject& obj = doc.to<JsonObject>();
+      
+//      StaticJsonDocument<objBufferSize> doc; 
+//      JsonObject& obj = doc.to<JsonObject>();
+      StaticJsonBuffer<(objBufferSize * 2)> doc;
+      JsonObject& obj = doc.createObject();
+
       obj["mqtt_server"] = config.mqtt_server;
       obj["mqtt_port"] = config.mqtt_port;
       obj["mqtt_client"] = config.mqtt_client;
@@ -128,12 +132,14 @@ void configManager() {
       if (!configFile) {
         Serial.println(F("Failed to open config file"));
       }
-      if (serializeJsonPretty(doc, Serial) == 0) {
-        Serial.println(F("Failed to write to Serial"));
-      } 
-      if (serializeJson(doc, configFile) == 0) {
-        Serial.println(F("Failed to write to file"));
-      } 
+//      if (serializeJsonPretty(doc, Serial) == 0) {
+//        Serial.println(F("Failed to write to Serial"));
+//      } 
+//      if (serializeJson(doc, configFile) == 0) {
+//        Serial.println(F("Failed to write to file"));
+//      } 
+      obj.printTo(Serial);
+      obj.printTo(configFile);
       configFile.close();
       Serial.println();
     }  

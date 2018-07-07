@@ -63,7 +63,7 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
       if ( message.payload = "1" ) {
          Serial.println("ca-me-ra-me-raaaaaaaa");
         // get the payload to add parameters in the function ?
-        return serverCapture(1);
+        return serverCapture();
       }
     }
     if ( message.command = "timelapse" ) {

@@ -11,7 +11,9 @@
 bool resetConfig = false, wifiResetConfig = false; // set to true to reset FS and/or Wifimanager, don't forget to set this to false after
 unsigned long configTimeout1 = 300, configTimeout2 = 180, minDelayBetweenframes, reconnectInterval = 1000; 
 unsigned long lastMqttReconnectAttempt = 0, lastWifiReconnectAttempt = 0, lastPictureAttempt;
-bool shouldSaveConfig = true, executeOnce = false, manualConfig = false, timelapse = false, transmitNow = true, transmitStream = false;
+bool shouldSaveConfig = true, executeOnce = false, manualConfig = false;
+bool transmitNow = false, transmitStream = false;
+bool timelapse = false, base64encoding = false;
 int configCount = 0, wifiFailCount = 0, mqttFailCount = 0, configMode = 0;
 
 // ESP
@@ -26,7 +28,6 @@ int configCount = 0, wifiFailCount = 0, mqttFailCount = 0, configMode = 0;
 #define WEB_SERVER 0
 #define WEB_SERVER_SECURE 0
 #define NTP_SERVER 0
-//char devicePass[40]="motdepasse", deviceId[20], devicePrefix[8] = "Camera";
 char devicePass[40]="motdepasse", devicePrefix[8] = "Camera";
 
 /// Go deeper into message details, with commands and sensors table ?
@@ -49,6 +50,8 @@ struct mqttConfig {
   char mqtt_topic_in[50];
 };
 
+char captureTopic[40];
+
 //// FILE / STREAM MANAGER
 static const size_t camBufferSize = 1024; // 4096; //2048; //1024;
 static const size_t objBufferSize = 256;
@@ -58,7 +61,7 @@ int fileTotalKB = 0;
 int fileUsedKB = 0; 
 int fileCount = 0;
 String errMsg = "";
-int resolution = 4; int fpm = 1; 
+int resolution = 4; int fpm = 0; 
 int otaSignal = 0;
 
 //// NTP

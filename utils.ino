@@ -155,6 +155,22 @@ void checkFile(const String fileName, int value) {
   }
 }
 
+void connectWifi() {
+
+    /// use saved paramater, but you can hardcode yours here
+    String ssid = WiFi.SSID();
+    String pass = WiFi.psk();
+    WiFi.begin(ssid.c_str(), pass.c_str());
+   
+    while (WiFi.status() != WL_CONNECTED) { 
+       Serial.print("Attempting Wifi connection....");     
+       delay(1000);    
+    }
+    Serial.println();
+    Serial.print("WiFi connected.  IP address:");
+    Serial.println(WiFi.localIP());    
+}
+
 void updateFile(const String fileName, int value) {
   File f = SPIFFS.open(fileName.c_str(), "w");
   if (!f) {
