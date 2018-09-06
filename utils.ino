@@ -1,6 +1,81 @@
 ///////////////////////////////////////////////////////////////////////////////////
-//    function to interact with MCU, FileSystem, physical world      //
+//    functions to interact with MCU, FileSystem, physical world      //
 ///////////////////////////////////////////////////////////////////////////////////
+
+void checkSerial() {
+  while (Serial.available() == 0 && millis() < 4000);
+  //On timeout or availability of data, we come here.
+  if (Serial.available() > 0) {
+    //If data is available, we enter here.
+    int test = Serial.read(); //We then clear the input buffer
+    Serial.println("DEBUG"); //Give feedback indicating mode
+    Serial.println(DEBUG);
+    aSerial.on();
+  }
+  else {
+    aSerial.off();
+    //Serial.setDebugOutput(false);
+  }
+}
+
+void loadConfig() {
+  aSerial.vvv().pln(F("mounting FS..."));
+  if (SPIFFS.begin()) {
+    aSerial.vvv().pln(F("FS mounted"));
+    if (SPIFFS.exists("/config.json")) {
+      aSerial.vvv().pln(F("Reading config file."));
+      File configFile = SPIFFS.open("/config.json", "r");
+      if (configFile) {
+        aSerial.vvv().pln(F("Opened config file."));
+        size_t size = configFile.size();
+        // Allocate a buffer to store contents of the file.
+        std::unique_ptr<char[]> buf(new char[size]);
+        configFile.readBytes(buf.get(), size);
+        // for ArduinoJson v6
+        //StaticJsonDocument<(objBufferSize * 2)> doc;
+        //        DeserializationError error = deserializeJson(doc, buf.get());
+        //        if (error) {
+        //          Serial.println(F("Failed to load json config"));
+        //        }
+        //        JsonObject& obj = doc.as<JsonObject>();
+        //        if (serializeJsonPretty(doc, Serial) == 0) {
+        //          Serial.println(F("Failed to write to file"));
+        //        }
+        // for ArduinoJson v5
+        //StaticJsonBuffer<(objBufferSize * 2)> jsonBuffer;
+        DynamicJsonBuffer jsonBuffer;
+        JsonObject& obj = jsonBuffer.parseObject(buf.get());
+#if DEBUG != 0
+        obj.printTo(Serial);
+#endif
+        if (obj.success()) {
+          strlcpy(config.mqtt_server, obj["mqtt_server"], sizeof(config.mqtt_server));
+          strlcpy(config.mqtt_port, obj["mqtt_port"],  sizeof(config.mqtt_port));
+          strlcpy(config.mqtt_client, obj["mqtt_client"],  sizeof(config.mqtt_client));
+          strlcpy(config.mqtt_user, obj["mqtt_user"] | "",  sizeof(config.mqtt_user));
+          strlcpy(config.mqtt_password, obj["mqtt_password"] | "",  sizeof(config.mqtt_password));
+          strlcpy(config.mqtt_topic_in, obj["mqtt_topic_in"],  sizeof(config.mqtt_topic_in));
+          strlcpy(config.mqtt_topic_out, obj["mqtt_topic_out"],  sizeof(config.mqtt_topic_out));
+          strlcpy(masterTopic, config.mqtt_topic_in, sizeof(masterTopic));
+          strcat(masterTopic, "/+/+" );
+          //strcat(masterTopic, "/#" );
+          strlcpy(streamTopic, config.mqtt_topic_out, sizeof(streamTopic));
+          strcat(streamTopic, "/camera/stream");
+          strlcpy(captureTopic, config.mqtt_topic_out, sizeof(captureTopic));
+          strcat(captureTopic, "/camera/capture");
+          strlcpy(eofTopic, config.mqtt_topic_out, sizeof(eofTopic));
+          strcat(eofTopic, "/camera/eof");
+        }
+        else {
+          aSerial.vv().pln(F("Failed to load json config."));
+        }
+      }
+    }
+  } else {
+    aSerial.vv().pln(F("Failed to mount FS."));
+  }
+  ticker.detach();
+}
 
 void tick() {
   int state = digitalRead(STATE_LED);
@@ -10,33 +85,34 @@ void tick() {
 void setPins() {
   pinMode(STATE_LED, OUTPUT);
   digitalWrite(STATE_LED, HIGH);
-  pinMode(OTA_BUTTON_PIN, INPUT_PULLUP);
-  debouncer.attach(OTA_BUTTON_PIN);
-  debouncer.interval(3000);
-  Serial.println(F("Pins set"));
+  debouncer.attach(OTA_BUTTON_PIN, INPUT_PULLUP);
+  debouncer.interval(debouncerInterval);
+  aSerial.vvv().pln(F("Pins set"));
 }
 
-void checkButton(int context) {
-  if ( context == 0 ) {
-    debouncer.update();
-    int value = debouncer.read();
-    if (value == LOW) {
-      Serial.println(F("Long push detected, asked for config"));
-      manualConfig = true;
-      configManager();
-      value == HIGH;
-    }
+void quitConfigMode() {
+  //state = !state;
+  if ( configMode == 0 ) {
+    return;
   }
-  if ( context == 1 ) {
-    debouncer.update();
-    int value = debouncer.read();
-    if (value == LOW) {
-      Serial.println(F("Long push detected, asked for return"));
-      manualConfig = false;
-      configManager();
-      value == HIGH;
-      return;
-    }
+  else if ( configMode == 1 ) {
+    wifiManager.setTimeout(5);
+    aSerial.vv().pln(F("Quit config mode"));
+    //return;
+  }
+}
+
+void checkButton() {
+  // Get the update value
+  int value = debouncer.read();
+  if ( value == HIGH) {
+    buttonState = 0;
+    aSerial.vvv().pln(F("Button released"));
+
+  } else {
+    buttonState = 1;
+    aSerial.vvv().pln(F("Long push detected, asked for config"));
+    buttonPressTimeStamp = millis();
   }
 }
 
@@ -45,17 +121,18 @@ void setReboot() { // Boot to sketch
   digitalWrite(STATE_LED, HIGH);
   pinMode(D8, OUTPUT);
   digitalWrite(D8, LOW);
-  Serial.println(F("Pins set for reboot"));
+  aSerial.vv().pln(F("Pins set for reboot..."));
   //    Serial.flush();
   //    yield(); yield(); delay(500);
   delay(5000);
+  aSerial.v().println(F("====== Reboot ========="));
   ESP.reset(); //ESP.restart();
   delay(2000);
 }
 
 void setDefault() {
   ticker.attach(2, tick);
-  Serial.println(F("Resetting config to the inital state"));
+  aSerial.v().println(F("====== Reset config ========="));
   resetConfig = false;
   SPIFFS.begin();
   delay(10);
@@ -63,42 +140,41 @@ void setDefault() {
   WiFiManager wifiManager;
   wifiManager.resetSettings();
   delay(100);
-  Serial.println(F("System cleared"));
+  aSerial.v().println(F("====== System cleared ========="));
   ticker.detach();
-  Serial.println(ESP.eraseConfig());
+  aSerial.v().pln(ESP.eraseConfig());
   setReboot();
 }
 
 void getDeviceId() {
-  #if ID_TYPE == 0
-    char deviceId[20];
-    char *espChipId;
-    float chipId = ESP.getChipId();
-    char chipIdBuffer[sizeof(chipId)];
-    espChipId = dtostrf(chipId, sizeof(chipId), 0, chipIdBuffer);
-    strcpy(deviceId, devicePrefix);
-    strcat(deviceId, espChipId);
-  #endif
-  #if ID_TYPE == 1
-    char deviceId[20];
-    String macAdress = WiFi.macAddress();
-    char macAdressBuffer[20];
-    macAdress.toCharArray(macAdressBuffer, 20);
-    // next => remove the ":" in the mac adress
-    strcpy(deviceId,devicePrefix);
-    strcat(deviceId,macAdressBuffer);
-  #endif
-//    #if ID_TYPE == 2
-//// soyons fous, let's create an eui64 address ( like ipv6 )
-////      Step #1: Split the MAC address in the middle:
-////      Step #2: Insert FF:FE in the middle:
-////      Step #4: Convert the first eight bits to binary:
-////      Step #5: Flip the 7th bit:
-////      Step #6: Convert these first eight bits back into hex:
-//    #endif
+#if ID_TYPE == 0
+  char deviceId[20];
+  char *espChipId;
+  float chipId = ESP.getChipId();
+  char chipIdBuffer[sizeof(chipId)];
+  espChipId = dtostrf(chipId, sizeof(chipId), 0, chipIdBuffer);
+  strcpy(deviceId, devicePrefix);
+  strcat(deviceId, espChipId);
+#endif
+#if ID_TYPE == 1
+  char deviceId[20];
+  String macAdress = WiFi.macAddress();
+  char macAdressBuffer[20];
+  macAdress.toCharArray(macAdressBuffer, 20);
+  // next => remove the ":" in the mac adress
+  strcpy(deviceId, devicePrefix);
+  strcat(deviceId, macAdressBuffer);
+#endif
+  //    #if ID_TYPE == 2
+  //// soyons fous, let's create an eui64 address ( like ipv6 )
+  ////      Step #1: Split the MAC address in the middle:
+  ////      Step #2: Insert FF:FE in the middle:
+  ////      Step #4: Convert the first eight bits to binary:
+  ////      Step #5: Flip the 7th bit:
+  ////      Step #6: Convert these first eight bits back into hex:
+  //    #endif
   strcpy(config.mqtt_client, deviceId);
-  delay(100); 
-  Serial.println(deviceId);
+  aSerial.vvv().p("DeviceID : ").pln(deviceId);
 }
 
 /// FILE MANAGER
@@ -126,28 +202,28 @@ void checkFile(const String fileName, int value) {
   if (!f ) {
     f = SPIFFS.open(fileName, "w");
     if (!f) {
-      Serial.printf("%s open failed \n", fileName.c_str());
+      aSerial.vvv().p(fileName.c_str()).pln(F("opening failed"));
     }
     else {
-      Serial.printf("====== Writing to %s ========= \n", fileName.c_str());
+      aSerial.vvv().p(F("Writing to ")).pln(fileName.c_str());
       f.println(value);
       f.close();
     }
   }
   else {
     // if the properties file exists on startup,  read it and set the defaults
-    Serial.printf("%s exists. Reading. ", fileName.c_str());
+    aSerial.vvv().p(fileName.c_str()).pln(" exists. Reading... ");
     while (f.available()) {
       if ( fileName == "ota.txt" ) {
         String str = f.readStringUntil('\n');
-        Serial.println(str);
+        aSerial.vvv().p(str).pln();
         // extract otaSignal, otaType, otaUrl, and fingerprint ( for httpsUpdate )
         // if the int correspond to waited value, update otaSignal, otaFile and setReboot()
         //value = str.toInt();
       }
       else {
         String str = f.readStringUntil('\n');
-        Serial.println(str);
+        aSerial.vvv().p(str).pln();
         value = str.toInt();
       }
     }
@@ -156,30 +232,28 @@ void checkFile(const String fileName, int value) {
 }
 
 void connectWifi() {
+  /// use saved paramater, but you can hardcode yours here
+  String ssid = WiFi.SSID();
+  String pass = WiFi.psk();
+  WiFi.begin(ssid.c_str(), pass.c_str());
 
-    /// use saved paramater, but you can hardcode yours here
-    String ssid = WiFi.SSID();
-    String pass = WiFi.psk();
-    WiFi.begin(ssid.c_str(), pass.c_str());
-   
-    while (WiFi.status() != WL_CONNECTED) { 
-       Serial.print("Attempting Wifi connection....");     
-       delay(1000);    
-    }
-    Serial.println();
-    Serial.print("WiFi connected.  IP address:");
-    Serial.println(WiFi.localIP());    
+  while (WiFi.status() != WL_CONNECTED) {
+    aSerial.vvv().p(F("Attempting Wifi connection...."));
+    delay(1000);
+  }
+  Serial.println();
+  aSerial.vv().p(F("WiFi connected. IP Address : ")).pln(WiFi.localIP());
 }
 
 void updateFile(const String fileName, int value) {
   File f = SPIFFS.open(fileName.c_str(), "w");
   if (!f) {
-    Serial.printf("%s open failed \n", fileName.c_str());
+    aSerial.vv().p(fileName.c_str()).pln(F("opening failed"));
   }
   else {
-    Serial.printf("====== Writing to %s  ========= \n", fileName.c_str());
+    aSerial.vvv().p("Writing to ").pln(fileName.c_str());
     f.println(value);
-    Serial.printf(" %s  updated \n", fileName.c_str());
+    aSerial.vvv().p(fileName.c_str()).pln(F(" updated"));
     f.close();
   }
 }
@@ -193,33 +267,32 @@ void getUpdated(int which, const char* url, const char* fingerprint) {
     ESPhttpUpdate.rebootOnUpdate(true);
     t_httpUpdate_return ret;
     if ( which == 0 ) {
-      Serial.println(F("Update Sketch..."));
+      aSerial.v().pln(F("Update Sketch..."));
       t_httpUpdate_return ret = ESPhttpUpdate.update(url);
     }
     if ( which == 1 ) {
-      Serial.println(F("Update Sketch..."));
+      aSerial.v().pln(F("Update Sketch..."));
       //t_httpUpdate_return ret = ESPhttpUpdate.updateSpiffs(otaUrl, "", httpsFingerprint);
       t_httpUpdate_return ret = ESPhttpUpdate.updateSpiffs(url, "", fingerprint);
     }
     if ( which == 2 ) {
-      Serial.println(F("Update SPIFFS..."));
+      aSerial.v().pln(F("Update SPIFFS..."));
       t_httpUpdate_return ret = ESPhttpUpdate.updateSpiffs(url);
     }
     if ( which == 3 ) {
-      Serial.println(F("Update SPIFFS..."));
+      aSerial.v().pln(F("Update SPIFFS..."));
       t_httpUpdate_return ret = ESPhttpUpdate.updateSpiffs(url, "", fingerprint);
     }
     ticker.detach();
     switch (ret) {
       case HTTP_UPDATE_FAILED:
-        Serial.printf("HTTP_UPDATE_FAILD Error (%d): %s", ESPhttpUpdate.getLastError(), ESPhttpUpdate.getLastErrorString().c_str());
-        Serial.println();
+        aSerial.v().p(F("HTTP_UPDATE_FAILD Error : ")).p(ESPhttpUpdate.getLastError()).p(" / ").pln(ESPhttpUpdate.getLastErrorString().c_str());
         break;
       case HTTP_UPDATE_NO_UPDATES:
-        Serial.println(F("HTTP_UPDATE_NO_UPDATES"));
+        aSerial.v().pln(F("HTTP_UPDATE_NO_UPDATES "));
         break;
       case HTTP_UPDATE_OK:
-        Serial.println(F("HTTP_UPDATE_OK"));
+        aSerial.v().pln(F("HTTP_UPDATE_OK"));
         break;
     }
   }
@@ -228,24 +301,18 @@ void getUpdated(int which, const char* url, const char* fingerprint) {
 /// TIME
 #if NTP_SERVER == 1
 void digitalClockDisplay() {
-  Serial.print(hour());
+  aSerial.vvv().p(hour());
   printDigits(minute());
   printDigits(second());
-  Serial.print(" ");
-  Serial.print(day());
-  Serial.print(".");
-  Serial.print(month());
-  Serial.print(".");
-  Serial.print(year());
-  Serial.println();
+  aSerial.vvv().p("").p(day()).p(".").p(month()).p(".").pln(year());
 }
 
 void printDigits(int digits) {
   // utility for digital clock display: prints preceding colon and leading 0
-  Serial.print(":");
+  aSerial.vvv().p(":");
   if (digits < 10)
-    Serial.print('0');
-  Serial.print(digits);
+    aSerial.vvv().p('0');
+  aSerial.vvv().p(digits);
 }
 
 const int NTP_PACKET_SIZE = 48; // NTP time is in the first 48 bytes of message
@@ -253,20 +320,17 @@ byte packetBuffer[NTP_PACKET_SIZE]; //buffer to hold incoming & outgoing packets
 
 time_t getNtpTime() {
   IPAddress ntpServerIP; // NTP server's ip address
-
   while (Udp.parsePacket() > 0) ; // discard any previously received packets
-  Serial.println("Transmit NTP Request");
+  aSerial.vv().pln(F("Transmit NTP Request"));
   // get a random server from the pool
   WiFi.hostByName(ntpServerName, ntpServerIP);
-  Serial.print(ntpServerName);
-  Serial.print(": ");
-  Serial.println(ntpServerIP);
+  aSerial.vv().p(ntpServerName).p(" : ").pln(ntpServerIP);
   sendNTPpacket(ntpServerIP);
   uint32_t beginWait = millis();
   while (millis() - beginWait < 1500) {
     int size = Udp.parsePacket();
     if (size >= NTP_PACKET_SIZE) {
-      Serial.println("Receive NTP Response");
+      aSerial.vvv().pln(F("Receiving NTP packet ..."));
       Udp.read(packetBuffer, NTP_PACKET_SIZE);  // read packet into the buffer
       unsigned long secsSince1900;
       // convert four bytes starting at location 40 to a long integer
@@ -277,14 +341,13 @@ time_t getNtpTime() {
       return secsSince1900 - 2208988800UL + timeZone * SECS_PER_HOUR;
     }
   }
-  Serial.println("No NTP Response :-(");
+  aSerial.vv().pln(F("No NTP response"));
   return 0; // return 0 if unable to get the time
 }
 
 // send an NTP request to the time server at the given address
-void sendNTPpacket(IPAddress& address)
-{
-  Serial.println(F("sending NTP packet..."));
+void sendNTPpacket(IPAddress& address) {
+  aSerial.vvv().pln(F("Sending NTP packet ..."));
   // set all bytes in the buffer to 0
   memset(packetBuffer, 0, NTP_PACKET_SIZE);
   // Initialize values needed to form NTP request
@@ -298,7 +361,6 @@ void sendNTPpacket(IPAddress& address)
   packetBuffer[13]  = 0x4E;
   packetBuffer[14]  = 49;
   packetBuffer[15]  = 52;
-
   // all NTP fields have been given values, now
   // you can send a packet requesting a timestamp:
   Udp.beginPacket(address, 123); //NTP requests are to port 123
