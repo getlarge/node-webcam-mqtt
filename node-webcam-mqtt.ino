@@ -88,6 +88,7 @@ void serverStream();
 
 // MQTT
 void mqttInit();
+void presentSensors(const char* objectId, const char* sensorId, const char* resourceId, const char* payload);
 void mqttError();
 boolean mqttConnect();
 void mqttCallback(char* topic, byte* payload, unsigned int length);
@@ -123,7 +124,8 @@ void before() {
 #elif DEBUG == 4
   aSerial.setFilter(Level::vvvv);
 #endif
-  aSerial.v().println(F("====== Before setup ========="));
+  aSerial.v().p(F("====== ")).p(SKETCH_NAME).pln(F(" ======"));
+  aSerial.v().println(F("====== Before setup ======"));
   //checkState();
   checkFile(otaFile, otaSignal);
   if (otaSignal == 1 ) {
@@ -139,7 +141,7 @@ void before() {
     //getUpdated(int which, const char* url, const char* fingerprint);
   }
   for (uint8_t t = 4; t > 0; t--) {
-    aSerial.vvv().print("[SETUP] WAIT ").print(t).println(" ...");
+    aSerial.vvv().print(F("[SETUP] WAIT ")).print(t).println(" ...");
     Serial.flush();
     delay(1000);
   }
@@ -157,15 +159,16 @@ void before() {
 
 void setup() {
   before();
-  aSerial.v().println(F("====== Setup started ========="));
+  aSerial.v().println(F("====== Setup started ======"));
   getDeviceId();
   loadConfig();
+  configManager();
+
   checkFile(fpmFile, fpm);
   checkFile(resFile, resolution);
   arducamInit();
   delay(1000);
 #if WEB_SERVER == 0
-  //configManager();
   mqttInit();
 #elif WEB_SERVER == 1
   connectWifi();
@@ -189,14 +192,50 @@ void setup() {
   aSerial.vvv().print(F("setup heap size : ")).println(ESP.getFreeHeap());
   ticker.detach();
   digitalWrite(STATE_LED, HIGH);
-  aSerial.v().println(F("====== Setup ended ========="));
+  aSerial.v().println(F("====== Setup ended ======"));
 }
 
 void loop() {
   if ( ! executeOnce) {
     executeOnce = true;
-    aSerial.v().println(F("====== Loop started ========="));
+    delay(500);
+    //    presentSensors("3349","0","5910","0");
+    //    presentSensors("3306","1","5850","0");
+    aSerial.v().println(F("====== Loop started ======"));
   }
+#if WEB_SERVER == 0
+  mqttClient.loop();
+  if (!mqttClient.connected()) {
+    long now = millis();
+    ticker.attach(0.3, tick);
+    if (now - lastMqttReconnectAttempt > reconnectInterval) {
+      lastMqttReconnectAttempt = now;
+      ++mqttFailCount;
+      aSerial.vv().p(F("MQTT connection failure #")).p(mqttFailCount).pln(F(" --> reconnect"));
+      if (mqttConnect()) {
+        mqttFailCount = 0;
+        //  lastMqttReconnectAttempt = 0;
+      }
+      else if (mqttFailCount > mqttMaxFailedCount) {
+        aSerial.vv().p(mqttMaxFailedCount).pln(F("+ MQTT connection failure --> config mode"));
+        //  lastMqttReconnectAttempt = 0;
+        //  mqttFailCount = 0;
+        configManager();
+      }
+    }
+  }
+#elif WEB_SERVER == 1
+  server.handleClient();
+#endif
+
+#if NTP_SERVER == 1
+  if (timeStatus() != timeNotSet) {
+    if (now() != prevDisplay) { //update the display only if time has changed
+      prevDisplay = now();
+      digitalClockDisplay();
+    }
+  }
+#endif
   boolean changed = debouncer.update();
   if ( changed ) {
     checkButton();
@@ -214,43 +253,9 @@ void loop() {
       }
     }
   }
-#if WEB_SERVER == 0
-  if (!mqttClient.connected()) {
-    long now = millis();
-    //checkButton(0);
-    ticker.attach(0.3, tick);
-    if (now - lastMqttReconnectAttempt > reconnectInterval) {
-      lastMqttReconnectAttempt = now;
-      ++mqttFailCount;
-      aSerial.vv().println(F("MQTT connection failure --> reconnect"));
-      if (mqttConnect()) {
-        mqttFailCount = 0;
-        lastMqttReconnectAttempt = 0;
-      }
-      if (mqttFailCount > 30) {
-        aSerial.vv().println(F("5+ MQTT connection failure --> config mode"));
-        lastMqttReconnectAttempt = 0;
-        configManager();
-      }
-    }
-  }
-#endif
   else {
     ticker.detach();
     long t = millis();
-#if WEB_SERVER == 0
-    mqttClient.loop();
-#elif WEB_SERVER == 1
-    server.handleClient();
-#endif
-#if NTP_SERVER == 1
-    if (timeStatus() != timeNotSet) {
-      if (now() != prevDisplay) { //update the display only if time has changed
-        prevDisplay = now();
-        digitalClockDisplay();
-      }
-    }
-#endif
     if (timelapse == true && (t - lastPictureAttempt > minDelayBetweenframes)) {
       lastPictureAttempt = t;
       serverCapture();

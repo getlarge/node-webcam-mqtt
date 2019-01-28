@@ -22,9 +22,9 @@ void loadConfig() {
   aSerial.vvv().pln(F("mounting FS..."));
   if (SPIFFS.begin()) {
     aSerial.vvv().pln(F("FS mounted"));
-    if (SPIFFS.exists("/config.json")) {
+    if (SPIFFS.exists(configFileName)) {
       aSerial.vvv().pln(F("Reading config file."));
-      File configFile = SPIFFS.open("/config.json", "r");
+      File configFile = SPIFFS.open(configFileName, "r");
       if (configFile) {
         aSerial.vvv().pln(F("Opened config file."));
         size_t size = configFile.size();
@@ -49,6 +49,11 @@ void loadConfig() {
         obj.printTo(Serial);
 #endif
         if (obj.success()) {
+          if (obj["ip"]) {
+            strcpy(static_ip, obj["ip"]);
+            strcpy(static_gw, obj["gateway"]);
+            strcpy(static_sn, obj["subnet"]);
+          }
           strlcpy(config.mqtt_server, obj["mqtt_server"], sizeof(config.mqtt_server));
           strlcpy(config.mqtt_port, obj["mqtt_port"],  sizeof(config.mqtt_port));
           strlcpy(config.mqtt_client, obj["mqtt_client"],  sizeof(config.mqtt_client));
@@ -57,14 +62,14 @@ void loadConfig() {
           strlcpy(config.mqtt_topic_in, obj["mqtt_topic_in"],  sizeof(config.mqtt_topic_in));
           strlcpy(config.mqtt_topic_out, obj["mqtt_topic_out"],  sizeof(config.mqtt_topic_out));
           strlcpy(masterTopic, config.mqtt_topic_in, sizeof(masterTopic));
-          strcat(masterTopic, "/+/+" );
+          strcat(masterTopic, "/+/+/+/+" );
           //strcat(masterTopic, "/#" );
           strlcpy(streamTopic, config.mqtt_topic_out, sizeof(streamTopic));
-          strcat(streamTopic, "/camera/stream");
+          strcat(streamTopic, "/4/3349/2/5910");
           strlcpy(captureTopic, config.mqtt_topic_out, sizeof(captureTopic));
-          strcat(captureTopic, "/camera/capture");
+          strcat(captureTopic, "/4/3349/2/5910");
           strlcpy(eofTopic, config.mqtt_topic_out, sizeof(eofTopic));
-          strcat(eofTopic, "/camera/eof");
+          strcat(eofTopic, "/1/3349/2/5911");
         }
         else {
           aSerial.vv().pln(F("Failed to load json config."));
@@ -108,10 +113,9 @@ void checkButton() {
   if ( value == HIGH) {
     buttonState = 0;
     aSerial.vvv().pln(F("Button released"));
-
   } else {
     buttonState = 1;
-    aSerial.vvv().pln(F("Long push detected, asked for config"));
+    aSerial.vvv().pln(F("Long push detected --> config mode"));
     buttonPressTimeStamp = millis();
   }
 }
@@ -125,22 +129,22 @@ void setReboot() { // Boot to sketch
   //    Serial.flush();
   //    yield(); yield(); delay(500);
   delay(5000);
-  aSerial.v().println(F("====== Reboot ========="));
+  aSerial.v().println(F("====== Reboot ======"));
   ESP.reset(); //ESP.restart();
   delay(2000);
 }
 
 void setDefault() {
   ticker.attach(2, tick);
-  aSerial.v().println(F("====== Reset config ========="));
+  aSerial.v().println(F("====== Reset config ======"));
   resetConfig = false;
   SPIFFS.begin();
   delay(10);
   SPIFFS.format();
-  WiFiManager wifiManager;
+  //  WiFiManager wifiManager;
   wifiManager.resetSettings();
   delay(100);
-  aSerial.v().println(F("====== System cleared ========="));
+  aSerial.v().println(F("====== System cleared ======"));
   ticker.detach();
   aSerial.v().pln(ESP.eraseConfig());
   setReboot();
@@ -153,8 +157,9 @@ void getDeviceId() {
   float chipId = ESP.getChipId();
   char chipIdBuffer[sizeof(chipId)];
   espChipId = dtostrf(chipId, sizeof(chipId), 0, chipIdBuffer);
-  strcpy(deviceId, devicePrefix);
-  strcat(deviceId, espChipId);
+  //  strcpy(deviceId, devicePrefix);
+  //  strcat(deviceId, espChipId);
+  strcpy(deviceId, espChipId);
 #endif
 #if ID_TYPE == 1
   char deviceId[20];
@@ -174,7 +179,7 @@ void getDeviceId() {
   ////      Step #6: Convert these first eight bits back into hex:
   //    #endif
   strcpy(config.mqtt_client, deviceId);
-  aSerial.vvv().p("DeviceID : ").pln(deviceId);
+  aSerial.vvv().p(F("DeviceID : ")).pln(deviceId);
 }
 
 /// FILE MANAGER
@@ -259,42 +264,33 @@ void updateFile(const String fileName, int value) {
 }
 
 /// OTA
-void getUpdated(int which, const char* url, const char* fingerprint) {
+void getUpdated(int which, const char* url) {
   if ((WiFi.status() == WL_CONNECTED)) {
     ticker.attach(0.7, tick);
     otaSignal = 0;
     updateFile(otaFile, otaSignal);
     ESPhttpUpdate.rebootOnUpdate(true);
+    //  ESPhttpUpdate.setLedPin(LED_BUILTIN, LOW);
+
     t_httpUpdate_return ret;
-    if ( which == 0 ) {
-      aSerial.v().pln(F("Update Sketch..."));
-      t_httpUpdate_return ret = ESPhttpUpdate.update(url);
-    }
-    if ( which == 1 ) {
-      aSerial.v().pln(F("Update Sketch..."));
-      //t_httpUpdate_return ret = ESPhttpUpdate.updateSpiffs(otaUrl, "", httpsFingerprint);
-      t_httpUpdate_return ret = ESPhttpUpdate.updateSpiffs(url, "", fingerprint);
-    }
-    if ( which == 2 ) {
-      aSerial.v().pln(F("Update SPIFFS..."));
-      t_httpUpdate_return ret = ESPhttpUpdate.updateSpiffs(url);
-    }
-    if ( which == 3 ) {
-      aSerial.v().pln(F("Update SPIFFS..."));
-      t_httpUpdate_return ret = ESPhttpUpdate.updateSpiffs(url, "", fingerprint);
-    }
-    ticker.detach();
-    switch (ret) {
-      case HTTP_UPDATE_FAILED:
-        aSerial.v().p(F("HTTP_UPDATE_FAILD Error : ")).p(ESPhttpUpdate.getLastError()).p(" / ").pln(ESPhttpUpdate.getLastErrorString().c_str());
-        break;
-      case HTTP_UPDATE_NO_UPDATES:
-        aSerial.v().pln(F("HTTP_UPDATE_NO_UPDATES "));
-        break;
-      case HTTP_UPDATE_OK:
-        aSerial.v().pln(F("HTTP_UPDATE_OK"));
-        break;
-    }
+//    if ( which == 0 ) {
+//      WiFiClient client;
+//      aSerial.v().pln(F("Update Sketch..."));
+//      t_httpUpdate_return ret = ESPhttpUpdate.update(client, url);
+//    }
+//
+//    ticker.detach();
+//    switch (ret) {
+//      case HTTP_UPDATE_FAILED:
+//        aSerial.v().p(F("HTTP_UPDATE_FAILD Error : ")).p(ESPhttpUpdate.getLastError()).p(" / ").pln(ESPhttpUpdate.getLastErrorString().c_str());
+//        break;
+//      case HTTP_UPDATE_NO_UPDATES:
+//        aSerial.v().pln(F("HTTP_UPDATE_NO_UPDATES "));
+//        break;
+//      case HTTP_UPDATE_OK:
+//        aSerial.v().pln(F("HTTP_UPDATE_OK"));
+//        break;
+//    }
   }
 }
 
