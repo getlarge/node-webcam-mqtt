@@ -1,20 +1,21 @@
 ///////////////////////////////////////////////////////////////////////////////////
 //   handle mqtt init, connect, reconnect, callback, message parsing      //
 ///////////////////////////////////////////////////////////////////////////////////
-void mqttInit() {
-  mqttClient.setServer(config.mqtt_server, atoi(config.mqtt_port));
+void mqttInit(Config &config) {
+  mqttClient.setServer(config.mqttServer, atoi(config.mqttPort));
   mqttClient.setCallback(mqttCallback);
-  mqttClient.connect(((const char*)config.mqtt_client), ((const char*)config.mqtt_user), ((const char*)config.mqtt_password));
-  mqttClient.subscribe((const char*)masterTopic);
-  presentSensors("3349", "0", "5910", "0");
-  presentSensors("3306", "1", "5850", "0");
-  aSerial.vv().p(F("Connecting to mqtt://")).p((const char*)config.mqtt_server).p(":").p(atoi(config.mqtt_port)).p(F(" - client ID : ")).pln((const char*)config.mqtt_client);
 }
 
-boolean mqttConnect() {
-  if (mqttClient.connect(((const char*)config.mqtt_client), ((const char*)config.mqtt_user), ((const char*)config.mqtt_password))) {
-    aSerial.vv().pln(F("MQTT client connected"));
-    mqttClient.subscribe((const char*)masterTopic);
+boolean mqttConnect(Config &config) {
+  strcpy(config.mqttClient, config.devEui);
+  long randNumber = random(10000);
+  char randNumberBuffer[10];
+  ltoa(randNumber, randNumberBuffer, 10);
+  strcat(config.mqttClient, "-" );
+  strcat(config.mqttClient, randNumberBuffer);
+  if (mqttClient.connect(((const char*)config.mqttClient), ((const char*)config.mqttUser), ((const char*)config.mqttPassword))) {
+    aSerial.vv().p(F("Connected to mqtt://")).p((const char*)config.mqttServer).p(":").p(atoi(config.mqttPort)).p(F(" - client ID : ")).pln((const char*)config.mqttClient);
+    mqttClient.subscribe((const char*)message.masterTopic);
     presentSensors("3306", "1", "5850", "0");
     presentSensors("3349", "2", "5910", "0");
   }
@@ -22,9 +23,9 @@ boolean mqttConnect() {
 }
 
 void presentSensors(const char* objectId, const char* sensorId, const char* resourceId, const char* payload) {
-  // "pattern": "+prefixedDevEui/+method/+ipsoObjectId/+sensorId/+ipsoResourceId",
+  // "pattern": "+prefixedDevEui/+method/+omaObjectId/+sensorId/+ipsoResourceId",
   char presentationTopic[70];
-  strlcpy(presentationTopic, config.mqtt_topic_out, sizeof(presentationTopic));
+  strlcpy(presentationTopic, config.mqttTopicOut, sizeof(presentationTopic));
   strcat(presentationTopic, "/0/" );
   strcat(presentationTopic, objectId );
   strcat(presentationTopic, "/" );
@@ -42,12 +43,14 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
   message.payload = ((char*)payload);
   aSerial.v().println(F("====== Received message ======"));
   aSerial.vv().p(F("Topic : ")).pln((const char*)topic).p(F("Payload : ")).pln((const char*)message.payload);
+
   // first sanity check
-  //  if (topic != strstr(topic, config.mqtt_topic_in)) {
+  //  if (topic != strstr(topic, config.mqttTopicIn)) {
   //    Serial.print("error in the protocol");
   //    return;
   //  }
-  // "pattern": "+prefixedDevEui/+method/+ipsoObjectId/+sensorId/+ipsoResourcesId",
+
+  // "pattern": "+prefixedDevEui/+method/+omaObjectId/+sensorId/+omaResourcesId",
   for (str = strtok_r(topic + 1, "/", &p); str && i <= 4;
        str = strtok_r(NULL, "/", &p)) {
     switch (i) {
@@ -60,7 +63,7 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
           break;
         }
       case 2: {
-          strlcpy(message.ipsoObjectId, str, sizeof(message.ipsoObjectId));
+          strlcpy(message.omaObjectId, str, sizeof(message.omaObjectId));
           break;
         }
       case 3: {
@@ -68,46 +71,28 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
           break;
         }
       case 4: {
-          strlcpy(message.ipsoResourcesId, str, sizeof(message.ipsoResourcesId));
+          strlcpy(message.omaResourcesId, str, sizeof(message.omaResourcesId));
           break;
         }
     }
     i++;
   }
-  aSerial.vvv().p(F("Received command : ")).pln((const char*)message.method).p(F("For sensor : ")).pln((const char*)message.ipsoObjectId);
+  aSerial.vvv().p(F("Method : ")).pln((const char*)message.method).p(F("For sensor : ")).pln((const char*)message.omaObjectId);
   parseMessage(message);
-
-  //  for (int i = 0; i < length; i++) {
-  //    aSerial.vv().p((char)payload[i]);
-  //    //strtok(s, "-");
-  //    // extract otaSignal, otaType, otaUrl, and fingerprint ( for httpsUpdate )
-  //    // if the int correspond to waited value, update otaSignal, otaFile and setReboot()
-  //  }
-
 }
 
-void parseMessage(messageFormat message) {
-  if ( strcmp(message.ipsoObjectId, "3349") == 0 && strcmp(message.ipsoResourcesId, "5911") == 0) {
+void parseMessage(Message &message) {
+  if ( strcmp(message.omaObjectId, "3349") == 0 && strcmp(message.omaResourcesId, "5911") == 0) {
     if ( strcmp(message.method, "1") == 0 ) {
-      if ( strcmp(message.payload, "1") == 0 ) {
+      if ( strcmp(message.payload, "true") == 0 ) {
         aSerial.vvvv().pln(F("ca-me-ra-me-raaaaaaaa"));
-        return serverCapture();
+        return serverCapture(myCAM, message);
       }
     }
-    //    if ( strcmp(message.method, "timelapse") == 0 ) {
-    //      if ( strcmp(message.payload, "1") == 0 ) {
-    //        timelapse = true;
-    //        return;
-    //      }
-    //      if ( strcmp(message.payload, "0") ==  0) {
-    //        timelapse = false;
-    //        return;
-    //      }
-    //    }
     if ( strcmp(message.method, "4") == 0 ) {
       if ( strcmp(message.payload, "1") == 0 ) {
         transmitStream = true;
-        return serverStream();
+        return serverStream(myCAM, message);
       }
       if ( strcmp(message.payload, "0") == 0) {
         transmitStream = false;
@@ -115,26 +100,33 @@ void parseMessage(messageFormat message) {
       }
     }
   }
-  else if ( ( strcmp(message.method, "1") == 0 ) && ( strcmp(message.ipsoObjectId, "2000") == 0 ) ) {
-    if ( strcmp(message.ipsoResourcesId, "reso") == 0 ) {
-      int reso = atoi(message.payload);
+  else if ( ( strcmp(message.method, "1") == 0 ) && ( strcmp(message.omaObjectId, "2000") == 0 ) ) {
+    if ( strcmp(message.omaResourcesId, "reso") == 0 ) {
+      //  int reso = atoi(message.payload);
+      const char* reso = message.payload;
       aSerial.vv().p(F("Change resolution to : ")).pln(reso);
-      if ( reso >= 0 || reso <= 8 ) {
-        setCamResolution(reso);
-        return updateFile(resFile, reso);
+      if ( atoi(reso) >= 0 || atoi(reso) <= 8 ) {
+        strlcpy(config.camResolution, reso,  sizeof(config.camResolution));
+        setCamResolution(atoi(reso));
+        //  return saveConfig(configFileName, config);
       }
     }
-    if ( strcmp(message.ipsoResourcesId, "fpm") == 0 ) {
-      int fpm = atoi(message.payload);
+    if ( strcmp(message.omaResourcesId, "fpm") == 0 ) {
+      //  int fpm = atoi(message.payload);
+      const char* fpm = message.payload;
       aSerial.vv().p(F("Change FPM to : ")).pln(fpm);
-      if ( fpm >= 0 || fpm <= 4 ) {
-        setFPM(fpm);
-        return updateFile(fpmFile, fpm);
+      if ( atoi(fpm) >= 0 || atoi(fpm) <= 4 ) {
+        strlcpy(config.camFpm, fpm,  sizeof(config.camFpm));
+        setFPM(atoi(fpm));
+        //  return saveConfig(configFileName, config);
       }
     }
-    if ( strcmp(message.ipsoResourcesId, "update") == 0 ) {
+    if ( strcmp(message.omaResourcesId, "update") == 0 ) {
       if (strcmp(message.payload, "ota") == 0) {
-        //return getUpdated();
+        //  strtok(s, "-");
+        //  extract otaSignal, otaType, otaUrl, and fingerprint ( for httpsUpdate )
+        //  if the int correspond to waited value, update otaSignal, otaFile and setReboot()
+        //  return getUpdated();
       }
 
     }

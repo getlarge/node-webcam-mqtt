@@ -30,46 +30,44 @@ volatile byte state = LOW;
 #define WEB_SERVER 0
 #define NTP_SERVER 0
 
-char static_ip[16] = "192.168.1.35";
-char static_gw[16] = "192.168.1.254";
-char static_sn[16] = "91.121.61.147";
-char devicePass[40] = "motdepasse", devicePrefix[8] = "Camera";
-char masterTopic[60], captureTopic[80], eofTopic[80], streamTopic[80];
 
-/// Go deeper into message details, with commands and sensors table ?
-//  "pattern": "+prefixedDevEui/+method/+ipsoObjectId/+sensorId/+ipsoResourcesId",
-//struct messageFormat {
-//  char *deviceId;
-//  char in_prefix[10] = "/in";
-//  char out_prefix[10] = "/out";
-//  char sensor[25];
-//  char command[25];
-//  char* payload;
-//};
-struct messageFormat {
-  char *deviceId;
-  char in_prefix[10] = "-in";
-  char out_prefix[10] = "-out";
+char devicePrefix[8] = "Camera";
+char masterTopic[60], captureTopic[80], streamTopic[80];
+
+//  "pattern": "+prefixedDevEui/+method/+omaObjectId/+sensorId/+omaResourcesId",
+struct Message {
   char method[5];
-  char ipsoObjectId[5];
+  char omaObjectId[5];
   char sensorId[25];
-  char ipsoResourcesId[5];
+  char omaResourcesId[5];
   char* payload;
+  char masterTopic[60];
+  char captureTopic[80];
+  char streamTopic[80];
 };
 
-struct mqttConfig {
-  char mqtt_server[40];
-  char mqtt_port[6];
-  char mqtt_client[40];
-  char mqtt_user[30];
-  char mqtt_password[70];
-  char mqtt_topic_out[50];
-  char mqtt_topic_in[50];
+struct Config {
+  char devEui[20];
+  char devicePass[40] = "motdepasse";
+  char inPrefix[10] = "-in";
+  char outPrefix[10] = "-out";
+  char mqttServer[40];
+  char mqttPort[6];
+  char mqttClient[40];
+  char mqttUser[30];
+  char mqttPassword[70];
+  char mqttTopicOut[50];
+  char mqttTopicIn[50];
+  char staticIp[16] = "192.168.1.35";
+  char staticGw[16] = "192.168.1.254";
+  char staticSn[16] = "91.121.61.147";
+  char camResolution[4] = "4";
+  char camFpm[4] = "3";
 };
 
 //// FILE / STREAM MANAGER
 static const size_t camBufferSize = 1024; // 4096; //2048; //1024;
-static const size_t objBufferSize = 256;
+static const size_t objBufferSize = 512;
 static const int fileSpaceOffset = 700000;
 const String otaFile = "ota.txt"; const String resFile = "res.txt"; const String fpmFile = "fpm.txt"; const String configFileName = "config.json";
 int fileTotalKB = 0;

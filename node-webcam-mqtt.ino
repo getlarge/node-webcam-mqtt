@@ -17,7 +17,6 @@
 #include <WiFiClientSecure.h>
 #endif
 #include <PubSubClient.h>
-#include <rBase64.h>
 #include <TimeLib.h>
 #include <Ticker.h>
 #include <Bounce2.h>
@@ -47,52 +46,49 @@ PubSubClient mqttClient(wifiClient);
 ArduCAM myCAM(OV2640, CS);
 Bounce debouncer = Bounce();
 Ticker ticker;
-rBase64generic<camBufferSize> base64;
-//rBase64generic<2048> base64;
-
-mqttConfig config;
-messageFormat message;
-
+Config config;
+Message message;
 WiFiManager wifiManager;
 
 // UTILS
 void checkSerial();
-void loadConfig();
+void loadConfig(const String filename, Config &config);
+void saveConfig(const String filename, Config &config);
 void quitConfigMode();
 void tick();
 void setPins();
 void checkButton();
 void setReboot();
 void setDefault();
-void getDeviceId();
-void checkState();
+void getDeviceId(Config &config);
 void checkFile(const String fileName, int value);
 void updateFile(const String fileName, int value);
 void getUpdated(int which, const char* url, const char* fingerprint);
 void setPinsRebootUart();
 void connectWifi();
+void loadRoutes(Message &message, Config &config);
 
 // SETTINGS
 void saveConfigCallback();
 void configModeCallback (WiFiManager *myWiFiManager);
-void configManager();
+void configManager(Config &config);
 
 // CAPTURE
 void arducamInit();
 void setCamResolution(int reso);
 void setFPM(int interv);
 void start_capture();
-void camCapture(ArduCAM myCAM);
-void serverCapture();
-void serverStream();
+void camCapture(ArduCAM myCAM, Message &message);
+void serverCapture(ArduCAM myCAM,  Message &message);
+void serverStream(ArduCAM myCAM,  Message &message);
 
 // MQTT
-void mqttInit();
+void mqttInit(Config &config);
 void presentSensors(const char* objectId, const char* sensorId, const char* resourceId, const char* payload);
 void mqttError();
-boolean mqttConnect();
+boolean mqttConnect(Config &config);
 void mqttCallback(char* topic, byte* payload, unsigned int length);
-void parseMessage(messageFormat message);
+void parseMessage(Message &message);
 
 #if WEB_SERVER == 1
 void handleNotFound();
@@ -126,7 +122,6 @@ void before() {
 #endif
   aSerial.v().p(F("====== ")).p(SKETCH_NAME).pln(F(" ======"));
   aSerial.v().println(F("====== Before setup ======"));
-  //checkState();
   checkFile(otaFile, otaSignal);
   if (otaSignal == 1 ) {
     //WiFi.persistent(false);
@@ -160,16 +155,15 @@ void before() {
 void setup() {
   before();
   aSerial.v().println(F("====== Setup started ======"));
-  getDeviceId();
-  loadConfig();
-  configManager();
-
-  checkFile(fpmFile, fpm);
-  checkFile(resFile, resolution);
+  randomSeed(micros());
+  getDeviceId(config);
+  loadConfig(configFileName, config);
+  loadRoutes(message, config);
+  configManager(config);
   arducamInit();
   delay(1000);
 #if WEB_SERVER == 0
-  mqttInit();
+  mqttInit(config);
 #elif WEB_SERVER == 1
   connectWifi();
 #endif
@@ -199,12 +193,10 @@ void loop() {
   if ( ! executeOnce) {
     executeOnce = true;
     delay(500);
-    //    presentSensors("3349","0","5910","0");
-    //    presentSensors("3306","1","5850","0");
     aSerial.v().println(F("====== Loop started ======"));
   }
+  //
 #if WEB_SERVER == 0
-  mqttClient.loop();
   if (!mqttClient.connected()) {
     long now = millis();
     ticker.attach(0.3, tick);
@@ -212,17 +204,20 @@ void loop() {
       lastMqttReconnectAttempt = now;
       ++mqttFailCount;
       aSerial.vv().p(F("MQTT connection failure #")).p(mqttFailCount).pln(F(" --> reconnect"));
-      if (mqttConnect()) {
+      if (mqttConnect(config)) {
         mqttFailCount = 0;
-        //  lastMqttReconnectAttempt = 0;
+        lastMqttReconnectAttempt = 0;
       }
       else if (mqttFailCount > mqttMaxFailedCount) {
         aSerial.vv().p(mqttMaxFailedCount).pln(F("+ MQTT connection failure --> config mode"));
         //  lastMqttReconnectAttempt = 0;
         //  mqttFailCount = 0;
-        configManager();
+        configManager(config);
       }
     }
+  } else {
+    ticker.detach();
+    mqttClient.loop();
   }
 #elif WEB_SERVER == 1
   server.handleClient();
@@ -236,6 +231,7 @@ void loop() {
     }
   }
 #endif
+
   boolean changed = debouncer.update();
   if ( changed ) {
     checkButton();
@@ -249,18 +245,8 @@ void loop() {
       }
       else {
         manualConfig = true;
-        configManager();
+        configManager(config);
       }
-    }
-  }
-  else {
-    ticker.detach();
-    long t = millis();
-    if (timelapse == true && (t - lastPictureAttempt > minDelayBetweenframes)) {
-      lastPictureAttempt = t;
-      serverCapture();
-      //lastPictureAttempt = 0;
-      return;
     }
   }
 }
