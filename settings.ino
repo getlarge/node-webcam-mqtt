@@ -58,6 +58,19 @@ void configManager(Config &config) {
   //  wifiManager.addParameter(&customCamFpm);
   wifiManager.setAPCallback(configModeCallback);
   wifiManager.setSaveConfigCallback(saveConfigCallback);
+  wifiManager.setAPStaticIPConfig(IPAddress(192, 168, 244, 1), IPAddress(192, 168, 244, 1), IPAddress(255, 255, 255, 0));
+  //  IPAddress _ip, _gw, _sn;
+  //  _ip.fromString(static_ip);
+  //  _gw.fromString(static_gw);
+  //  _sn.fromString(static_sn);
+  //  wifiManager.setSTAStaticIPConfig(_ip, _gw, _sn);
+  wifiManager.addParameter(&customMqttServer);
+  wifiManager.addParameter(&customMqttPort);
+  wifiManager.addParameter(&customMqttUser);
+  wifiManager.addParameter(&customMqttPassword);
+  wifiManager.addParameter(&customCamResolution);
+  wifiManager.addParameter(&customCamFpm);
+
   //wifiManager.setBreakAfterConfig(true);
   wifiManager.setMinimumSignalQuality(10);
   String script;
@@ -89,8 +102,17 @@ void configManager(Config &config) {
   //    }
   //  }
 
+  // After first start, hard reset, or without any known WiFi AP
+  if (WiFi.status() != WL_CONNECTED) {
+    aSerial.vv().pln(F("Auto config access"));
+    if (!wifiManager.autoConnect(config.devEui, config.devicePass)) {
+      aSerial.v().pln(F("Connection failure --> Timeout"));
+      delay(3000);
+      setReboot();
+    }
+  }
   // When manually asking ...
-  if ((configCount > 0 && manualConfig == true)) {
+  else if ((configCount > 0 && manualConfig == true)) {
     //manualConfig = false;
     aSerial.vv().pln(F("Manual config access"));
     wifiManager.setTimeout(configTimeout * 2);

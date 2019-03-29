@@ -3,12 +3,12 @@
 #define SKETCH_VERSION "0.5"
 
 /// GLOBALS
-#define DEBUG 3 // from 0 to 4
+#define DEBUG 4 // from 0 to 4
 #define BAUD_RATE 115200
 
 bool resetConfig = false, wifiResetConfig = false; // set to true to reset FS and/or Wifimanager, don't forget to set this to false after
-unsigned long configTimeout = 200, minDelayBetweenframes = 1000, reconnectInterval = 1000, debouncerInterval = 2000;
-unsigned long buttonPressTimeStamp;
+unsigned long configTimeout = 200, minDelayBetweenframes = 1000, reconnectInterval = 500, debouncerInterval = 2000;
+unsigned long lastMqttReconnectAttempt = 0, lastWifiReconnectAttempt = 0, lastPictureAttempt = 0, buttonPressTimeStamp;
 bool shouldSaveConfig = true, executeOnce = false, manualConfig = false;
 bool transmitNow = false, transmitStream = false;
 bool timelapse = false, base64encoding = false;
