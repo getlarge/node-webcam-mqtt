@@ -19,41 +19,6 @@ void checkSerial() {
 }
 
 /// FILE MANAGER
-void checkFile(const String fileName, int value) {
-  SPIFFS.begin();
-  delay(10);
-  File f = SPIFFS.open(fileName, "r");
-  if (!f ) {
-    f = SPIFFS.open(fileName, "w");
-    if (!f) {
-      aSerial.vvv().p(fileName.c_str()).pln(F("opening failed"));
-    }
-    else {
-      aSerial.vvv().p(F("Writing to ")).pln(fileName.c_str());
-      f.println(value);
-      f.close();
-    }
-  }
-  else {
-    // if the properties file exists on startup,  read it and set the defaults
-    aSerial.vvv().p(fileName.c_str()).pln(" exists. Reading... ");
-    while (f.available()) {
-      if ( fileName == "ota.txt" ) {
-        String str = f.readStringUntil('\n');
-        aSerial.vvv().p(str).pln();
-        // extract otaSignal, otaType, otaUrl, and fingerprint ( for httpsUpdate )
-        // if the int correspond to waited value, update otaSignal, otaFile and setReboot()
-        //value = str.toInt();
-      }
-      else {
-        String str = f.readStringUntil('\n');
-        aSerial.vvv().p(str).pln();
-        value = str.toInt();
-      }
-    }
-    f.close();
-  }
-}
 
 void updateFile(const String fileName, int value) {
   File f = SPIFFS.open(fileName.c_str(), "w");
@@ -69,51 +34,43 @@ void updateFile(const String fileName, int value) {
 }
 
 void loadConfig(const String fileName, Config &config) {
-  aSerial.vvv().pln(F("mounting FS..."));
-  if (SPIFFS.begin()) {
-    aSerial.vvv().pln(F("FS mounted"));
-    if (SPIFFS.exists(fileName)) {
-      aSerial.vvv().pln(F("Reading config file."));
-      File configFile = SPIFFS.open(fileName, "r");
-      if (configFile) {
-        size_t size = configFile.size();
-        // Allocate a buffer to store contents of the file.
-        std::unique_ptr<char[]> buf(new char[size]);
-        configFile.readBytes(buf.get(), size);
-        // for ArduinoJson v6
-        //  StaticJsonDocument<(objBufferSize * 2)> obj;
-        DynamicJsonDocument obj(objBufferSize * 2);
-        DeserializationError error = deserializeJson(obj, buf.get());
-        if (error) {
-          aSerial.vv().p(F("Failed to load json config : ")).pln(error.c_str());
-        }
-#if DEBUG != 0
-        if (serializeJsonPretty(obj, Serial) == 0) {
-          aSerial.vv().pln(F("Failed to write to file."));
-        }
-#endif
-        //        if (obj["ip"]) {
-        //          strcpy(staticIp, obj["ip"]);
-        //          strcpy(staticGw, obj["gateway"]);
-        //          strcpy(staticSn, obj["subnet"]);
-        //        }
-        strlcpy(config.mqttServer, obj["mqttServer"], sizeof(config.mqttServer));
-        strlcpy(config.mqttPort, obj["mqttPort"],  sizeof(config.mqttPort));
-        //  strlcpy(config.mqttClient, obj["mqttClient"],  sizeof(config.mqttClient));
-        strlcpy(config.mqttUser, obj["mqttUser"] | "",  sizeof(config.mqttUser));
-        strlcpy(config.mqttPassword, obj["mqttPassword"] | "",  sizeof(config.mqttPassword));
-        strlcpy(config.mqttTopicIn, obj["mqttTopicIn"],  sizeof(config.mqttTopicIn));
-        strlcpy(config.mqttTopicOut, obj["mqttTopicOut"],  sizeof(config.mqttTopicOut));
-        strlcpy(config.camResolution, obj["camResolution"],  sizeof(config.camResolution));
-        strlcpy(config.camFpm, obj["camFpm"],  sizeof(config.camFpm));
+  aSerial.vvv().pln(F("Reading config file."));
+  File configFile = SPIFFS.open(fileName, "r");
+  if (configFile) {
+    size_t size = configFile.size();
+    // Allocate a buffer to store contents of the file.
+    std::unique_ptr<char[]> buf(new char[size]);
+    configFile.readBytes(buf.get(), size);
+    //  StaticJsonDocument<(objBufferSize * 2)> obj;
+    DynamicJsonDocument obj(objBufferSize * 2);
+    //  DeserializationError error = deserializeJson(obj, buf.get());
+    DeserializationError error = deserializeJson(obj, buf.get(), size);
+    if (error) {
+      aSerial.vv().p(F("Failed to load json config : ")).pln(error.c_str());
+    }
+    else {
+      serializeJsonPretty(obj, Serial);
+      strlcpy(config.mqttServer, obj["mqttServer"] | defaultMqttServer, sizeof(config.mqttServer));
+      strlcpy(config.mqttPort, obj["mqttPort"] | defaultMqttPort, sizeof(config.mqttPort));
+      strlcpy(config.mqttUser, obj["mqttUser"] | defaultMqttUser, sizeof(config.mqttUser));
+      strlcpy(config.mqttPassword, obj["mqttPassword"] | defaultMqttPassword, sizeof(config.mqttPassword));
+      strlcpy(config.mqttTopicIn, obj["mqttTopicIn"] | defaultMqttTopicIn,  sizeof(config.mqttTopicIn));
+      strlcpy(config.mqttTopicOut, obj["mqttTopicOut"] | defaultMqttTopicOut,  sizeof(config.mqttTopicOut));
+      if (obj["ip"]) {
+        strcpy(config.staticIp, obj["ip"]);
+        strcpy(config.staticGw, obj["gateway"]);
+        strcpy(config.staticSn, obj["subnet"]);
       }
-      else {
-        aSerial.vv().pln(F("Failed to load config file."));
+      if (obj["camResolution"]) {
+        strlcpy(config.camResolution, obj["camResolution"],  sizeof(config.camResolution));
+      }
+      if (obj["camFpm"]) {
+        strlcpy(config.camFpm, obj["camFpm"],  sizeof(config.camFpm));
       }
     }
   }
   else {
-    aSerial.vv().pln(F("Failed to mount FS."));
+    aSerial.vv().pln(F("Failed to load config file."));
   }
   ticker.detach();
 }
@@ -152,14 +109,55 @@ void saveConfig(const String fileName, Config &config) {
   configFile.close();
 }
 
+void initDefaultConfig(const String fileName, Config &config) {
+  DynamicJsonDocument obj(objBufferSize * 2);
+  obj["mqttServer"] = defaultMqttServer;
+  obj["mqttPort"] = defaultMqttPort;
+  obj["mqttClient"] = config.mqttClient;
+  obj["mqttUser"] = defaultMqttUser;
+  obj["mqttPassword"] = defaultMqttPassword;
+  obj["mqttTopicIn"] = defaultMqttTopicIn;
+  obj["mqttTopicOut"] = defaultMqttTopicOut;
+  obj["camResolution"] = config.camResolution;
+  obj["camFpm"] = config.camFpm;
+  File configFile = SPIFFS.open(fileName, "w");
+  if (!configFile) {
+    aSerial.vv().pln(F("Failed to open config file"));
+  }
+#if DEBUG != 0
+  if (serializeJsonPretty(obj, Serial) == 0) {
+    Serial.println(F("Failed to write to Serial"));
+  }
+#endif
+  if (serializeJson(obj, configFile) == 0) {
+    Serial.println(F("Failed to write to file"));
+  }
+  configFile.close();
+  strlcpy(config.mqttServer, defaultMqttServer, sizeof(config.mqttServer));
+  strlcpy(config.mqttPort, defaultMqttPort, sizeof(config.mqttPort));
+  strlcpy(config.mqttUser, defaultMqttUser, sizeof(config.mqttUser));
+  strlcpy(config.mqttPassword, defaultMqttPassword, sizeof(config.mqttPassword));
+  strlcpy(config.mqttTopicIn, defaultMqttTopicIn,  sizeof(config.mqttTopicIn));
+  strlcpy(config.mqttTopicOut,  defaultMqttTopicOut,  sizeof(config.mqttTopicOut));
+  strlcpy(config.mqttTopicIn, config.devEui, sizeof(config.mqttTopicIn));
+  strcat(config.mqttTopicIn, config.inPrefix);
+  strlcpy(config.mqttTopicOut, config.devEui, sizeof(config.mqttTopicOut));
+  strcat(config.mqttTopicOut, config.outPrefix);
+}
+
 void loadRoutes(Message &message, Config &config) {
+  // todo : add a register function,
+  //  then for each value in registered load corresponding route
   strlcpy(message.masterTopic, config.mqttTopicIn, sizeof(message.masterTopic));
   strcat(message.masterTopic, "/+/+/+/+" );
+  //  strcat(message.masterTopic, "/#" );
+  aSerial.vvv().p(F("master topic")).pln(message.masterTopic);
   strlcpy(message.streamTopic, config.mqttTopicOut, sizeof(message.streamTopic));
   strcat(message.streamTopic, "/4/3349/2/5910");
+  aSerial.vvvv().p(F("stream topic")).pln(message.streamTopic);
   strlcpy(message.captureTopic, config.mqttTopicOut, sizeof(message.captureTopic));
   strcat(message.captureTopic, "/1/3349/2/5910");
-  aSerial.vv().pln(message.masterTopic);
+  aSerial.vvvv().p(F("capture topic")).pln(message.captureTopic);
 }
 
 void tick() {
@@ -173,18 +171,6 @@ void setPins() {
   debouncer.attach(OTA_BUTTON_PIN, INPUT_PULLUP);
   debouncer.interval(debouncerInterval);
   aSerial.vvv().pln(F("Pins set"));
-}
-
-void quitConfigMode() {
-  //state = !state;
-  if ( configMode == 0 ) {
-    return;
-  }
-  else if ( configMode == 1 ) {
-    wifiManager.setTimeout(5);
-    aSerial.vv().pln(F("Quit config mode"));
-    //return;
-  }
 }
 
 void checkButton() {
@@ -253,18 +239,33 @@ void getDeviceId(Config &config) {
   ////      Step #6: Convert these first eight bits back into hex:
   //    #endif
   aSerial.vvv().p(F("DeviceID : ")).pln(config.devEui);
+  generateMqttClientId(config);
 }
 
 void connectWifi() {
   String ssid = WiFi.SSID();
   String pass = WiFi.psk();
-  WiFi.begin(ssid.c_str(), pass.c_str());
-
-  while (WiFi.status() != WL_CONNECTED) {
-    aSerial.vvv().p(F("Attempting Wifi connection...."));
-    delay(1000);
+  //  IPAddress _ip, _gw, _sn;
+  //  _ip.fromString(config.staticIp);
+  //  _gw.fromString(config.staticGw);
+  //  _sn.fromString(config.staticSn);
+  WiFi.mode(WIFI_STA);
+  if ((strcmp(defaultWifiSSID, "") != 0) && (strcmp(defaultWifiPass, "") != 0)) {
+    WiFi.begin(defaultWifiSSID, defaultWifiPass);
+  } else {
+    WiFi.begin(ssid.c_str(), pass.c_str());
   }
-  Serial.println();
+  wifiFailCount = 0;
+  String hostname(config.devEui);
+  WiFi.hostname(hostname);
+  while (WiFi.status() != WL_CONNECTED) {
+    aSerial.vvv().pln(F("Attempting Wifi connection...."));
+    wifiFailCount += 1;
+    if (wifiFailCount > 10 ) {
+      return configManager(config);
+    }
+    delay(reconnectInterval);
+  }
   aSerial.vv().p(F("WiFi connected. IP Address : ")).pln(WiFi.localIP());
 }
 

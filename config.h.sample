@@ -3,16 +3,17 @@
 #define SKETCH_VERSION "0.5"
 
 /// GLOBALS
-#define DEBUG 4 // from 0 to 4
+#define DEBUG 3 // from 0 to 4
 #define BAUD_RATE 115200
 
 bool resetConfig = false, wifiResetConfig = false; // set to true to reset FS and/or Wifimanager, don't forget to set this to false after
-unsigned long configTimeout = 200, minDelayBetweenframes = 1000, reconnectInterval = 500, debouncerInterval = 2000;
-unsigned long lastMqttReconnectAttempt = 0, lastWifiReconnectAttempt = 0, lastPictureAttempt = 0, buttonPressTimeStamp;
+unsigned long configTimeout = 200, minDelayBetweenframes = 1000, reconnectInterval = 1000, debouncerInterval = 2000;
+unsigned long buttonPressTimeStamp;
 bool shouldSaveConfig = true, executeOnce = false, manualConfig = false;
 bool transmitNow = false, transmitStream = false;
 bool timelapse = false, base64encoding = false;
 int configCount = 0, wifiFailCount = 0, mqttFailCount = 0, mqttMaxFailedCount = 10, configMode = 0, buttonState;
+volatile byte state = LOW;
 
 // ESP
 #define BOUNCE_LOCK_OUT
@@ -30,19 +31,17 @@ int configCount = 0, wifiFailCount = 0, mqttFailCount = 0, mqttMaxFailedCount = 
 #define NTP_SERVER 0
 
 /////////
+
 char devicePrefix[8] = "Camera";
 char masterTopic[60], captureTopic[80], streamTopic[80];
-// leave empty to use automatic Wifi config
-//const char* defaultWifiSSID = "Getlarge.net";
-//const char* defaultWifiPass = "4@62063Pg";
-const char* defaultWifiSSID = "HTCPortableHotspot";
-const char* defaultWifiPass = "2460C4CC7671C";
+const char* defaultWifiSSID = "";
+const char* defaultWifiPass = "";
 const char* defaultMqttServer = "192.168.1.192";
 const char* defaultMqttPort = "1883";
-const char* defaultMqttUser = "5c9b8ae8e099905878e93943";
-const char* defaultMqttPassword = "HWLHCZqcIEzdRuzO7WcWnAoPoEdEfGncFrFcTryfIsCdhA6yXJaeFTwMJ6FDgNFl";
-const char* defaultMqttTopicIn = "16769688-in";
-const char* defaultMqttTopicOut = "16769688-out";
+const char* defaultMqttUser = "";
+const char* defaultMqttPassword = "";
+const char* defaultMqttTopicIn = "test-in";
+const char* defaultMqttTopicOut = "test-out";
 
 //  "pattern": "+prefixedDevEui/+method/+omaObjectId/+sensorId/+omaResourcesId",
 struct Message {
@@ -79,10 +78,7 @@ struct Config {
 static const size_t camBufferSize = 1024; // 4096; //2048; //1024;
 static const size_t objBufferSize = 512;
 static const int fileSpaceOffset = 700000;
-const String otaFile = "ota.txt"; 
-const String resFile = "res.txt"; 
-const String fpmFile = "fpm.txt"; 
-const String configFileName = "config.json";
+const String otaFile = "ota.txt"; const String resFile = "res.txt"; const String fpmFile = "fpm.txt"; const String configFileName = "config.json";
 int fileTotalKB = 0;
 int fileUsedKB = 0;
 int fileCount = 0;

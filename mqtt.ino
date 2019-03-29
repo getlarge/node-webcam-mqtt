@@ -2,24 +2,57 @@
 //   handle mqtt init, connect, reconnect, callback, message parsing      //
 ///////////////////////////////////////////////////////////////////////////////////
 void mqttInit(Config &config) {
+  aSerial.vvv().p(F("Init mqtt://")).p((const char*)config.mqttServer).p(":").pln(atoi(config.mqttPort));
   mqttClient.setServer(config.mqttServer, atoi(config.mqttPort));
   mqttClient.setCallback(mqttCallback);
 }
 
-boolean mqttConnect(Config &config) {
+void generateMqttClientId(Config &config) {
   strcpy(config.mqttClient, config.devEui);
   long randNumber = random(10000);
   char randNumberBuffer[10];
   ltoa(randNumber, randNumberBuffer, 10);
   strcat(config.mqttClient, "-" );
   strcat(config.mqttClient, randNumberBuffer);
+}
+
+boolean mqttConnect(Config &config) {
+  aSerial.vvv().p(F("Connecting to mqtt://")).p((const char*)config.mqttServer).p(":").p(atoi(config.mqttPort)).p(F(" - client ID : ")).pln((const char*)config.mqttClient);
   if (mqttClient.connect(((const char*)config.mqttClient), ((const char*)config.mqttUser), ((const char*)config.mqttPassword))) {
-    aSerial.vv().p(F("Connected to mqtt://")).p((const char*)config.mqttServer).p(":").p(atoi(config.mqttPort)).p(F(" - client ID : ")).pln((const char*)config.mqttClient);
     mqttClient.subscribe((const char*)message.masterTopic);
     presentSensors("3306", "1", "5850", "0");
     presentSensors("3349", "2", "5910", "0");
   }
   return mqttClient.connected();
+}
+
+void mqttReconnect(Config &config) {
+  // Loop until we're reconnected
+  mqttFailCount = 0;
+//  if ( (strcmp((const char*)config.mqttServer, "") == 0) ) {
+//    return configManager(config);
+//  }
+//  if ( (strcmp((const char*)config.mqttPort, "") == 0) ) {
+//    return configManager(config);
+//  }
+  while (!mqttClient.connected()) {
+    ++mqttFailCount;
+    aSerial.vvv().p(F("Connecting to mqtt://")).p((const char*)config.mqttServer).p(":").pln(atoi(config.mqttPort));
+    generateMqttClientId(config);
+    if (mqttClient.connect(((const char*)config.mqttClient), ((const char*)config.mqttUser), ((const char*)config.mqttPassword))) {
+      aSerial.vvv().p(F("Connected to mqtt as : ")).pln((const char*)config.mqttClient);
+      mqttClient.subscribe((const char*)message.masterTopic);
+      presentSensors("3306", "1", "5850", "0");
+      presentSensors("3349", "2", "5910", "0");
+    } else {
+      aSerial.vvv().p(F("Failed mqtt connection : ")).pln(mqttClient.state());
+      if (mqttFailCount > mqttMaxFailedCount) {
+        aSerial.vv().p(mqttMaxFailedCount).pln(F("+ MQTT connection failure --> config mode"));
+        return configManager(config);
+      }
+      delay(reconnectInterval);
+    }
+  }
 }
 
 void presentSensors(const char* objectId, const char* sensorId, const char* resourceId, const char* payload) {
