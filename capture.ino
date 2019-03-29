@@ -28,16 +28,17 @@ void arducamInit() {
   myCAM.rdSensorReg8_8(OV2640_CHIPID_LOW, &pid);
   if ((vid != 0x26 ) && (( pid != 0x41 ) || ( pid != 0x42 ))) {
     aSerial.v().print(F("Can't find OV2640 module! pid :")).println(String(pid));
-    //Serial.println("Can't find OV2640 module! pid: " + String(pid));
   }
   else {
     aSerial.vvv().println(F("OV2640 detected."));
     myCAM.set_format(JPEG);
-    //myCAM.set_format(RAW);
+    //  myCAM.set_format(RAW);
     myCAM.InitCAM();
-    setFPM(fpm);
-    //setBufferSize(camBufferSize);
-    setCamResolution(resolution);
+    //  setFPM(fpm);
+    //  setBufferSize(camBufferSize);
+    //  setCamResolution(resolution);
+    setFPM(atoi(config.camFpm));
+    setCamResolution(atoi(config.camResolution));
     myCAM.clear_fifo_flag();
   }
   //  Dir dir = SPIFFS.openDir("/pics");
@@ -118,7 +119,7 @@ void start_capture() {
   myCAM.start_capture();
 }
 
-void camCapture(ArduCAM myCAM) {
+void camCapture(ArduCAM myCAM,  Message &message) {
 #if WEB_SERVER == 1
   WiFiClient client = server.client();
 #endif
@@ -130,12 +131,13 @@ void camCapture(ArduCAM myCAM) {
     aSerial.vv().println(F("Size is 0."));
     return;
   }
-
   myCAM.CS_LOW();
   myCAM.set_fifo_burst();
 #if !(defined (ARDUCAM_SHIELD_V2) && defined (OV2640_CAM))
   SPI.transfer(0xFF);
 #endif
+
+  static uint8_t buffer[camBufferSize] = {0xFF};
 
 #if WEB_SERVER == 1
   if (!client.connected()) return;
@@ -143,36 +145,31 @@ void camCapture(ArduCAM myCAM) {
   response += "Content-Type: image/jpeg\r\n";
   response += "Content-Length: " + String(len) + "\r\n\r\n";
   server.sendContent(response);
+#elif WEB_SERVER == 0
+  if (!mqttClient.connected()) return;
+  mqttClient.beginPublish((const char*)message.captureTopic, len, false);
 #endif
-  static uint8_t buffer[camBufferSize] = {0xFF};
   while (len) {
     size_t will_copy = (len < camBufferSize) ? len : camBufferSize;
     SPI.transferBytes(&buffer[0], &buffer[0], will_copy);
 #if WEB_SERVER == 0
-    if (!mqttClient.connected()) break;
-    mqttClient.publish((const char*)captureTopic, &buffer[0], will_copy, false);
-    //      if (base64encoding ) {
-    //        if ( base64.encode(&buffer[0], will_copy) == RBASE64_STATUS_OK) {
-    //           //Serial.println(base64.result());
-    //           mqttClient.publish(captureTopic, base64.result(), false);
-    //        }
-    //      }
+    mqttClient.write(&buffer[0], will_copy);
 #elif WEB_SERVER == 1
-    if (!client.connected()) break;
     client.write(&buffer[0], will_copy);
 #endif
     len -= will_copy;
   }
-  aSerial.vvv().print(F("after capture heap size : ")).println(ESP.getFreeHeap());
+#if WEB_SERVER == 0
+  mqttClient.endPublish();
+#endif
   myCAM.CS_HIGH();
 }
 
-void serverCapture() {
+void serverCapture(ArduCAM myCAM,  Message &message) {
   transmitNow = false;
   start_capture();
   digitalWrite(STATE_LED, LOW);
   aSerial.vv().println(F("Start Capturing"));
-  //mqttClient.publish((const char*)eofTopic, "0");
   int total_time = 0;
   total_time = millis();
   while (!myCAM.get_bit(ARDUCHIP_TRIG, CAP_DONE_MASK));
@@ -180,16 +177,16 @@ void serverCapture() {
   aSerial.vvv().print(F("Capturing time (in ms) : ")).println(total_time, DEC);
   total_time = 0;
   aSerial.vv().println(F("Capture done!"));
-  //mqttClient.publish((const char*)eofTopic, "1");
   total_time = millis();
-  camCapture(myCAM);
+  camCapture(myCAM, message);
   total_time = millis() - total_time;
   aSerial.vvv().print(F("Sending time (in ms) : ")).println(total_time, DEC);
+  aSerial.vvv().print(F("after capture heap size : ")).println(ESP.getFreeHeap());
   transmitNow = true;
   digitalWrite(STATE_LED, HIGH);
 }
 
-void serverStream() {
+void serverStream(ArduCAM myCAM,  Message &message) {
   transmitNow = false;
 #if WEB_SERVER == 1
   WiFiClient client = server.client();
@@ -219,19 +216,25 @@ void serverStream() {
     response = "--frame\r\n";
     response += "Content-Type: image/jpeg\r\n\r\n";
     server.sendContent(response);
+#elif WEB_SERVER == 0
+    if (!mqttClient.connected()) return;
+    mqttClient.beginPublish((const char*)message.streamTopic, len, false);
 #endif
     static uint8_t buffer[camBufferSize] = {0xFF};
+
     while (len) {
       size_t will_copy = (len < camBufferSize) ? len : camBufferSize;
       SPI.transferBytes(&buffer[0], &buffer[0], will_copy);
 #if WEB_SERVER == 0
-      //mqttClient.publish((const char*)streamTopic, &buffer[0], will_copy, false);
+      mqttClient.write(&buffer[0], will_copy);
 #elif WEB_SERVER == 1
-      if (!client.connected()) break;
       client.write(&buffer[0], will_copy);
 #endif
       len -= will_copy;
     }
+#if WEB_SERVER == 0
+    mqttClient.endPublish();
+#endif
     myCAM.CS_HIGH();
   }
 }

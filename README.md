@@ -10,6 +10,13 @@ Packages for ESP8266
 
 - Enter `http://arduino.esp8266.com/stable/package_esp8266com_index.json` into Additional Board Manager URLs field. 
 
+following libraries are required :
+
+- ArduinoJson
+- Bounce2
+- FS
+- Ticker
+- WifiManager
 
 ## Installation
 

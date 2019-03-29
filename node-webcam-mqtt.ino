@@ -17,7 +17,6 @@
 #include <WiFiClientSecure.h>
 #endif
 #include <PubSubClient.h>
-#include <rBase64.h>
 #include <TimeLib.h>
 #include <Ticker.h>
 #include <Bounce2.h>
@@ -47,51 +46,58 @@ PubSubClient mqttClient(wifiClient);
 ArduCAM myCAM(OV2640, CS);
 Bounce debouncer = Bounce();
 Ticker ticker;
-rBase64generic<camBufferSize> base64;
-//rBase64generic<2048> base64;
-
-mqttConfig config;
-messageFormat message;
-
+Config config;
+Message message;
 WiFiManager wifiManager;
 
 // UTILS
 void checkSerial();
-void loadConfig();
-void quitConfigMode();
+void loadConfig(const String filename, Config &config);
+void saveConfig(const String filename, Config &config);
+void initDefaultConfig(const String filename, Config &config);
+void loadRoutes(Message &message, Config &config);
+void connectWifi();
 void tick();
 void setPins();
 void checkButton();
 void setReboot();
 void setDefault();
-void getDeviceId();
-void checkState();
-void checkFile(const String fileName, int value);
+void getDeviceId(Config &config);
 void updateFile(const String fileName, int value);
 void getUpdated(int which, const char* url, const char* fingerprint);
 void setPinsRebootUart();
-void connectWifi();
 
 // SETTINGS
+WiFiManagerParameter customMqttServer("server", "mqtt server", config.mqttServer, sizeof(config.mqttServer));
+WiFiManagerParameter customMqttPort("port", "mqtt port", config.mqttPort, sizeof(config.mqttPort));
+WiFiManagerParameter customMqttUser("user", "mqtt user", config.mqttUser, sizeof(config.mqttUser));
+WiFiManagerParameter customMqttPassword("password", "mqtt password", config.mqttPassword, sizeof(config.mqttPassword));
+WiFiManagerParameter customCamResolution("resolution", "cam resolution", config.camResolution, sizeof(config.camResolution));
+WiFiManagerParameter customCamFpm("fpm", "cam fpm", config.camFpm, sizeof(config.camFpm));
 void saveConfigCallback();
+void quitConfigMode();
 void configModeCallback (WiFiManager *myWiFiManager);
-void configManager();
+void initConfigManager(Config &config);
+void configManager(Config &config);
 
 // CAPTURE
 void arducamInit();
 void setCamResolution(int reso);
 void setFPM(int interv);
 void start_capture();
-void camCapture(ArduCAM myCAM);
-void serverCapture();
-void serverStream();
+void camCapture(ArduCAM myCAM, Message &message);
+void serverCapture(ArduCAM myCAM,  Message &message);
+void serverStream(ArduCAM myCAM,  Message &message);
 
 // MQTT
-void mqttInit();
+void generateMqttClientId(Config &config);
+void mqttInit(Config &config);
+void presentSensors(const char* objectId, const char* sensorId, const char* resourceId, const char* payload);
 void mqttError();
-boolean mqttConnect();
+boolean mqttConnect(Config &config);
+void mqttReconnect(Config &config);
 void mqttCallback(char* topic, byte* payload, unsigned int length);
-void parseMessage(messageFormat message);
+void parseMessage(Message &message);
 
 #if WEB_SERVER == 1
 void handleNotFound();
@@ -123,23 +129,10 @@ void before() {
 #elif DEBUG == 4
   aSerial.setFilter(Level::vvvv);
 #endif
-  aSerial.v().println(F("====== Before setup ========="));
-  //checkState();
-  checkFile(otaFile, otaSignal);
-  if (otaSignal == 1 ) {
-    //WiFi.persistent(false);
-    String ssid = WiFi.SSID();
-    String pass = WiFi.psk();
-    WiFiMulti.addAP(ssid.c_str(), pass.c_str());
-    while (WiFiMulti.run() != WL_CONNECTED) { //use this when using ESP8266WiFiMulti.h
-      aSerial.vvv().println(F("Attempting Wifi connection.... "));
-      delay(500);
-    }
-    aSerial.vv().print(F("Wifi connected. IP Address : ")).println(WiFi.localIP());
-    //getUpdated(int which, const char* url, const char* fingerprint);
-  }
+  aSerial.v().p(F("====== ")).p(SKETCH_NAME).pln(F(" ======"));
+  aSerial.v().println(F("====== Before setup ======"));
   for (uint8_t t = 4; t > 0; t--) {
-    aSerial.vvv().print("[SETUP] WAIT ").print(t).println(" ...");
+    aSerial.vvv().print(F("[SETUP] WAIT ")).print(t).println(" ...");
     Serial.flush();
     delay(1000);
   }
@@ -152,24 +145,45 @@ void before() {
   if (resetConfig) {
     setDefault();
   }
+  randomSeed(micros());
+  getDeviceId(config);
   aSerial.vvv().print(F("before heap size : ")).println( ESP.getFreeHeap());
 }
 
 void setup() {
   before();
-  aSerial.v().println(F("====== Setup started ========="));
-  getDeviceId();
-  loadConfig();
-  checkFile(fpmFile, fpm);
-  checkFile(resFile, resolution);
-  arducamInit();
-  delay(1000);
-#if WEB_SERVER == 0
-  //configManager();
-  mqttInit();
-#elif WEB_SERVER == 1
+  aSerial.v().println(F("====== Setup started ======"));
+  aSerial.vvv().pln(F("mounting FS..."));
+  if (SPIFFS.begin()) {
+    aSerial.vvv().pln(F("FS mounted"));
+    if (SPIFFS.exists(configFileName)) {
+      loadConfig(configFileName, config);
+    } else {
+      generateMqttClientId(config);
+      initDefaultConfig(configFileName, config);
+    }
+  } else {
+    aSerial.vv().pln(F("Failed to mount FS."));
+  }
+  //  if (config.otaSignal == 1 ) {
+  //    //WiFi.persistent(false);
+  //    String ssid = WiFi.SSID();
+  //    String pass = WiFi.psk();
+  //    WiFiMulti.addAP(ssid.c_str(), pass.c_str());
+  //    while (WiFiMulti.run() != WL_CONNECTED) { //use this when using ESP8266WiFiMulti.h
+  //      aSerial.vvv().println(F("Attempting Wifi connection.... "));
+  //      delay(500);
+  //    }
+  //    aSerial.vv().print(F("Wifi connected. IP Address : ")).println(WiFi.localIP());
+  //    //getUpdated(int which, const char* url, const char* fingerprint);
+  //  }
+  loadRoutes(message, config);
   connectWifi();
+#if MQTT_CLIENT == 1
+  mqttInit(config);
 #endif
+  arducamInit();
+  initConfigManager(config);
 #if NTP_SERVER == 1
   aSerial.vvv().println(F("Starting UDP"));
   Udp.begin(localPort);
@@ -189,14 +203,35 @@ void setup() {
   aSerial.vvv().print(F("setup heap size : ")).println(ESP.getFreeHeap());
   ticker.detach();
   digitalWrite(STATE_LED, HIGH);
-  aSerial.v().println(F("====== Setup ended ========="));
+  aSerial.v().println(F("====== Setup ended ======"));
 }
 
 void loop() {
-  if ( ! executeOnce) {
+  if ( !executeOnce ) {
     executeOnce = true;
-    aSerial.v().println(F("====== Loop started ========="));
+    aSerial.v().println(F("====== Loop started ======"));
   }
+
+#if MQTT_CLIENT == 1
+  if (!mqttClient.connected()) {
+    mqttReconnect(config);
+  }
+  ticker.detach();
+  mqttClient.loop();
+#endif
+#if WEB_SERVER == 1
+  server.handleClient();
+#endif
+
+#if NTP_SERVER == 1
+  if (timeStatus() != timeNotSet) {
+    if (now() != prevDisplay) { //update the display only if time has changed
+      prevDisplay = now();
+      digitalClockDisplay();
+    }
+  }
+#endif
+
   boolean changed = debouncer.update();
   if ( changed ) {
     checkButton();
@@ -210,52 +245,8 @@ void loop() {
       }
       else {
         manualConfig = true;
-        configManager();
+        configManager(config);
       }
-    }
-  }
-#if WEB_SERVER == 0
-  if (!mqttClient.connected()) {
-    long now = millis();
-    //checkButton(0);
-    ticker.attach(0.3, tick);
-    if (now - lastMqttReconnectAttempt > reconnectInterval) {
-      lastMqttReconnectAttempt = now;
-      ++mqttFailCount;
-      aSerial.vv().println(F("MQTT connection failure --> reconnect"));
-      if (mqttConnect()) {
-        mqttFailCount = 0;
-        lastMqttReconnectAttempt = 0;
-      }
-      if (mqttFailCount > 30) {
-        aSerial.vv().println(F("5+ MQTT connection failure --> config mode"));
-        lastMqttReconnectAttempt = 0;
-        configManager();
-      }
-    }
-  }
-#endif
-  else {
-    ticker.detach();
-    long t = millis();
-#if WEB_SERVER == 0
-    mqttClient.loop();
-#elif WEB_SERVER == 1
-    server.handleClient();
-#endif
-#if NTP_SERVER == 1
-    if (timeStatus() != timeNotSet) {
-      if (now() != prevDisplay) { //update the display only if time has changed
-        prevDisplay = now();
-        digitalClockDisplay();
-      }
-    }
-#endif
-    if (timelapse == true && (t - lastPictureAttempt > minDelayBetweenframes)) {
-      lastPictureAttempt = t;
-      serverCapture();
-      //lastPictureAttempt = 0;
-      return;
     }
   }
 }
