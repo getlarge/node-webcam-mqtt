@@ -1,5 +1,10 @@
 # NODE WEBCAM MQTT
 
+ESP8266 arduino sketch to interact with [Aloes backend](https://framagit.org/aloes/device-manager) MQTT API.
+
+Adding camera functionnality with [Arducam](https://github.com/ArduCAM/Arduino) device and library.
+
+
 ## Requirements
 
 Arduino IDE - download the latest from arduino
@@ -36,13 +41,23 @@ Edit Arduino/libraries/PubSubClient/src/PubSubClient.h to :
 #define MQTT_MAX_PACKET_SIZE 4096
 ```
 
+
 ## Usage
 
 - Open any .ino file of the folder with Arduino IDE
+
 - Edit your preferences in `config.h`
+
 - Upload the code on your ESP8266 board
-- Configure the board via the Access Point
-- Set resetConfig to true, to restore default state at reset
+
+#if using MQTT_CLIENT
+
+- Copy the deviceId ( generated at setup on the serial interface ) to Aloes backend
+
+- Enter device credentials in `config.h` or configure the board via the Access Point ( 192.168.244.1 )
+
+#endif
+
 
 ## Reference
 

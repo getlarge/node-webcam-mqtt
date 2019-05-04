@@ -50,12 +50,6 @@ void initConfigManager(Config &config) {
 }
 
 void configManager(Config &config) {
-  //  wifiManager.addParameter(&customMqttServer);
-  //  wifiManager.addParameter(&customMqttPort);
-  //  wifiManager.addParameter(&customMqttUser);
-  //  wifiManager.addParameter(&customMqttPassword);
-  //  wifiManager.addParameter(&customCamResolution);
-  //  wifiManager.addParameter(&customCamFpm);
   wifiManager.setAPCallback(configModeCallback);
   wifiManager.setSaveConfigCallback(saveConfigCallback);
   wifiManager.setAPStaticIPConfig(IPAddress(192, 168, 244, 1), IPAddress(192, 168, 244, 1), IPAddress(255, 255, 255, 0));
@@ -64,15 +58,9 @@ void configManager(Config &config) {
   //  _gw.fromString(static_gw);
   //  _sn.fromString(static_sn);
   //  wifiManager.setSTAStaticIPConfig(_ip, _gw, _sn);
-  wifiManager.addParameter(&customMqttServer);
-  wifiManager.addParameter(&customMqttPort);
-  wifiManager.addParameter(&customMqttUser);
-  wifiManager.addParameter(&customMqttPassword);
-  wifiManager.addParameter(&customCamResolution);
-  wifiManager.addParameter(&customCamFpm);
-
   //wifiManager.setBreakAfterConfig(true);
   wifiManager.setMinimumSignalQuality(10);
+
   String script;
   script += "<script>";
   script += "document.addEventListener('DOMContentLoaded', function() {";
@@ -92,15 +80,6 @@ void configManager(Config &config) {
   configCount++;
   // After first start, hard reset, or without any known WiFi AP
   aSerial.vv().p(F(" load config file.")).pln((const char*)config.mqttServer);
-
-  //  if (WiFi.status() != WL_CONNECTED) {
-  //    aSerial.vv().pln(F("Auto config access"));
-  //    if (!wifiManager.autoConnect(config.devEui, config.devicePass)) {
-  //      aSerial.v().pln(F("Connection failure --> Timeout"));
-  //      delay(3000);
-  //      setReboot();
-  //    }
-  //  }
 
   // After first start, hard reset, or without any known WiFi AP
   if (WiFi.status() != WL_CONNECTED) {
@@ -150,7 +129,6 @@ void configManager(Config &config) {
       strlcpy(config.camFpm, customCamFpm.getValue(), sizeof(config.camFpm));
     }
     saveConfig(configFileName, config);
-    loadRoutes(message, config);
   }
   aSerial.v().pln();
   aSerial.vvv().pln(F("Config successful")).p(F("Config mode counter :")).pln(configCount);

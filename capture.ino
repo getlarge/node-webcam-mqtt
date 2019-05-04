@@ -119,7 +119,7 @@ void start_capture() {
   myCAM.start_capture();
 }
 
-void camCapture(ArduCAM myCAM,  Message &message) {
+void camCapture(ArduCAM myCAM) {
 #if WEB_SERVER == 1
   WiFiClient client = server.client();
 #endif
@@ -147,7 +147,7 @@ void camCapture(ArduCAM myCAM,  Message &message) {
   server.sendContent(response);
 #elif WEB_SERVER == 0
   if (!mqttClient.connected()) return;
-  mqttClient.beginPublish((const char*)message.captureTopic, len, false);
+  mqttClient.beginPublish((const char*)postTopics[1], len, false);
 #endif
   while (len) {
     size_t will_copy = (len < camBufferSize) ? len : camBufferSize;
@@ -165,7 +165,7 @@ void camCapture(ArduCAM myCAM,  Message &message) {
   myCAM.CS_HIGH();
 }
 
-void serverCapture(ArduCAM myCAM,  Message &message) {
+void serverCapture(ArduCAM myCAM) {
   transmitNow = false;
   start_capture();
   digitalWrite(STATE_LED, LOW);
@@ -178,7 +178,7 @@ void serverCapture(ArduCAM myCAM,  Message &message) {
   total_time = 0;
   aSerial.vv().println(F("Capture done!"));
   total_time = millis();
-  camCapture(myCAM, message);
+  camCapture(myCAM);
   total_time = millis() - total_time;
   aSerial.vvv().print(F("Sending time (in ms) : ")).println(total_time, DEC);
   aSerial.vvv().print(F("after capture heap size : ")).println(ESP.getFreeHeap());
@@ -186,7 +186,7 @@ void serverCapture(ArduCAM myCAM,  Message &message) {
   digitalWrite(STATE_LED, HIGH);
 }
 
-void serverStream(ArduCAM myCAM,  Message &message) {
+void serverStream(ArduCAM myCAM) {
   transmitNow = false;
 #if WEB_SERVER == 1
   WiFiClient client = server.client();
@@ -201,8 +201,7 @@ void serverStream(ArduCAM myCAM,  Message &message) {
     if (len >= 0x07ffff) {
       aSerial.vv().println(F("Over size."));
       continue;
-    }
-    else if (len == 0 ) {
+    } else if (len == 0 ) {
       aSerial.vv().println(F("Size is 0."));
       continue;
     }
@@ -218,7 +217,7 @@ void serverStream(ArduCAM myCAM,  Message &message) {
     server.sendContent(response);
 #elif WEB_SERVER == 0
     if (!mqttClient.connected()) return;
-    mqttClient.beginPublish((const char*)message.streamTopic, len, false);
+    mqttClient.beginPublish((const char*)postTopics[1], len, false);
 #endif
     static uint8_t buffer[camBufferSize] = {0xFF};
 

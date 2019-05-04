@@ -1,26 +1,7 @@
-//// SKETCH
-#define SKETCH_NAME "[ALOES NODE WEBCAM]"
-#define SKETCH_VERSION "0.5"
 
 /// GLOBALS
 #define DEBUG 4 // from 0 to 4
 #define BAUD_RATE 115200
-
-bool resetConfig = false, wifiResetConfig = false; // set to true to reset FS and/or Wifimanager, don't forget to set this to false after
-unsigned long configTimeout = 200, minDelayBetweenframes = 1000, reconnectInterval = 500, debouncerInterval = 2000;
-unsigned long lastMqttReconnectAttempt = 0, lastWifiReconnectAttempt = 0, lastPictureAttempt = 0, buttonPressTimeStamp;
-bool shouldSaveConfig = true, executeOnce = false, manualConfig = false;
-bool transmitNow = false, transmitStream = false;
-bool timelapse = false, base64encoding = false;
-int configCount = 0, wifiFailCount = 0, mqttFailCount = 0, mqttMaxFailedCount = 10, configMode = 0, buttonState;
-
-// ESP
-#define BOUNCE_LOCK_OUT
-#define OTA_BUTTON_PIN D3
-#define STATE_LED D4
-
-//// ARDUCAM
-#define CS 16
 
 /// NETWORK PARAMS
 #define ID_TYPE 0 // 0 : prefix+espCHipId - 1 : prefix+MACadress - 2 : prefix+EUI-64 address
@@ -29,34 +10,61 @@ int configCount = 0, wifiFailCount = 0, mqttFailCount = 0, mqttMaxFailedCount = 
 #define WEB_SERVER 0
 #define NTP_SERVER 0
 
+bool resetConfig = false, wifiResetConfig = false; // set to true to reset FS and/or Wifimanager, don't forget to set this to false after
+unsigned long configTimeout = 200, minDelayBetweenframes = 1000, reconnectInterval = 500, debouncerInterval = 2000;
+unsigned long lastMqttReconnectAttempt = 0, lastWifiReconnectAttempt = 0, lastPictureAttempt = 0, buttonPressTimeStamp;
+bool shouldSaveConfig = true, executeOnce = false, manualConfig = false;
+int configCount = 0, wifiFailCount = 0, mqttFailCount = 0, mqttMaxFailedCount = 10, configMode = 0, buttonState;
+
+//// FILE / STREAM MANAGER
+static const size_t objBufferSize = 512;
+static const int fileSpaceOffset = 700000;
+const String otaFile = "ota.txt";
+const String configFileName = "config.json";
+int fileTotalKB = 0;
+int fileUsedKB = 0;
+int fileCount = 0;
+String errMsg = "";
+int otaSignal = 0;
+
+//// NTP
+#if NTP_SERVER == 1
+static const char ntpServerName[] = "fr.pool.ntp.org";
+const int timeZone = 1;     // Central European Time
+unsigned int localPort = 8888;  // local port to listen for UDP packets
+#endif
+
+// ESP
+#define BOUNCE_LOCK_OUT
+#define OTA_BUTTON_PIN D3
+#define STATE_LED D4
+
+//// SKETCH
+#define SKETCH_NAME "[ALOES NODE WEBCAM]"
+#define SKETCH_VERSION "0.5"
+
 /////////
-char devicePrefix[8] = "Camera";
-char masterTopic[60], captureTopic[80], streamTopic[80];
 // leave empty to use automatic Wifi config
-//const char* defaultWifiSSID = "Getlarge.net";
-//const char* defaultWifiPass = "4@62063Pg";
-const char* defaultWifiSSID = "HTCPortableHotspot";
-const char* defaultWifiPass = "2460C4CC7671C";
-const char* defaultMqttServer = "192.168.1.192";
+const char* defaultWifiSSID = "GL-MT300N-V2-baa";
+const char* defaultWifiPass = "l34v31nt1m3";
+const char* defaultMqttServer = "192.168.1.129";
 const char* defaultMqttPort = "1883";
-const char* defaultMqttUser = "5c9b8ae8e099905878e93943";
-const char* defaultMqttPassword = "HWLHCZqcIEzdRuzO7WcWnAoPoEdEfGncFrFcTryfIsCdhA6yXJaeFTwMJ6FDgNFl";
-const char* defaultMqttTopicIn = "16769688-in";
-const char* defaultMqttTopicOut = "16769688-out";
+const char* defaultMqttUser = "5c2657ad36bb1052f87cf417";
+const char* defaultMqttPassword = "eKBQ233NGnmjwy7vWcrqD58kERKJBjtUxQL3cwH2PI9ELcaQhaulzG9F8GiVnApn";
+const char* defaultMqttTopicIn = "2894413-in";
+const char* defaultMqttTopicOut = "2894413-out";
 
 //  "pattern": "+prefixedDevEui/+method/+omaObjectId/+sensorId/+omaResourcesId",
 struct Message {
   char method[5];
   char omaObjectId[5];
   char sensorId[25];
-  char omaResourcesId[5];
+  char omaResourceId[5];
   char* payload;
-  char masterTopic[60];
-  char captureTopic[80];
-  char streamTopic[80];
 };
 
 struct Config {
+  char deviceName[30] = "node-webcam";
   char devEui[20];
   char devicePass[40] = "motdepasse";
   char inPrefix[10] = "-in";
@@ -75,24 +83,19 @@ struct Config {
   char camFpm[4] = "3";
 };
 
-//// FILE / STREAM MANAGER
-static const size_t camBufferSize = 1024; // 4096; //2048; //1024;
-static const size_t objBufferSize = 512;
-static const int fileSpaceOffset = 700000;
-const String otaFile = "ota.txt"; 
-const String resFile = "res.txt"; 
-const String fpmFile = "fpm.txt"; 
-const String configFileName = "config.json";
-int fileTotalKB = 0;
-int fileUsedKB = 0;
-int fileCount = 0;
-String errMsg = "";
-int resolution = 4; int fpm = 3;
-int otaSignal = 0;
+// sensors to register ( max 50 )
+// ( objectId, sensorId, resourceId, payload )
+const char* sensors[][50] = {
+  { "3306", "1", "5850", "digital_input"},
+  { "3349", "2", "5910", "buffer_input"},
+};
 
-//// NTP
-#if NTP_SERVER == 1
-static const char ntpServerName[] = "fr.pool.ntp.org";
-const int timeZone = 1;     // Central European Time
-unsigned int localPort = 8888;  // local port to listen for UDP packets
-#endif
+char* postTopics[][100] = {};
+
+//// ARDUCAM
+#define CS 16
+
+static const size_t camBufferSize = 1024; // 4096; //2048; //1024;
+bool transmitNow = false, transmitStream = false;
+bool timelapse = false, base64encoding = false;
+int resolution = 4; int fpm = 3;

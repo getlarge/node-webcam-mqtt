@@ -145,21 +145,6 @@ void initDefaultConfig(const String fileName, Config &config) {
   strcat(config.mqttTopicOut, config.outPrefix);
 }
 
-void loadRoutes(Message &message, Config &config) {
-  // todo : add a register function,
-  //  then for each value in registered load corresponding route
-  strlcpy(message.masterTopic, config.mqttTopicIn, sizeof(message.masterTopic));
-  strcat(message.masterTopic, "/+/+/+/+" );
-  //  strcat(message.masterTopic, "/#" );
-  aSerial.vvv().p(F("master topic")).pln(message.masterTopic);
-  strlcpy(message.streamTopic, config.mqttTopicOut, sizeof(message.streamTopic));
-  strcat(message.streamTopic, "/4/3349/2/5910");
-  aSerial.vvvv().p(F("stream topic")).pln(message.streamTopic);
-  strlcpy(message.captureTopic, config.mqttTopicOut, sizeof(message.captureTopic));
-  strcat(message.captureTopic, "/1/3349/2/5910");
-  aSerial.vvvv().p(F("capture topic")).pln(message.captureTopic);
-}
-
 void tick() {
   int state = digitalRead(STATE_LED);
   digitalWrite(STATE_LED, !state);
@@ -192,8 +177,8 @@ void setReboot() { // Boot to sketch
   pinMode(D8, OUTPUT);
   digitalWrite(D8, LOW);
   aSerial.vv().pln(F("Pins set for reboot..."));
-  //    Serial.flush();
-  //    yield(); yield(); delay(500);
+  Serial.flush();
+  yield();
   delay(5000);
   aSerial.v().println(F("====== Reboot ======"));
   ESP.reset(); //ESP.restart();
@@ -256,7 +241,7 @@ void connectWifi() {
     WiFi.begin(ssid.c_str(), pass.c_str());
   }
   wifiFailCount = 0;
-  String hostname(config.devEui);
+  String hostname(config.deviceName);
   WiFi.hostname(hostname);
   while (WiFi.status() != WL_CONNECTED) {
     aSerial.vvv().pln(F("Attempting Wifi connection...."));

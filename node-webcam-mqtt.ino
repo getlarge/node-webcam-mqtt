@@ -20,11 +20,12 @@
 #include <TimeLib.h>
 #include <Ticker.h>
 #include <Bounce2.h>
+
 #include <Wire.h>
 #include <ArduCAM.h>
 #include <SPI.h>
-
 #include "memorysaver.h" // config file in Arducam library
+
 #include "config.h"
 #if !(defined ESP8266 )
 #error Please select the ArduCAM ESP8266 UNO board in the Tools/Board
@@ -33,7 +34,6 @@
 WiFiUDP Udp;
 #endif
 ESP8266WiFiMulti WiFiMulti;
-
 #if CLIENT_SECURE == 0
 WiFiClient wifiClient;
 #elif CLIENT_SECURE == 1
@@ -43,19 +43,19 @@ WiFiClientSecure wifiClient;
 ESP8266WebServer server(80);
 #endif
 PubSubClient mqttClient(wifiClient);
-ArduCAM myCAM(OV2640, CS);
 Bounce debouncer = Bounce();
 Ticker ticker;
 Config config;
 Message message;
 WiFiManager wifiManager;
 
+ArduCAM myCAM(OV2640, CS);
+
 // UTILS
 void checkSerial();
 void loadConfig(const String filename, Config &config);
 void saveConfig(const String filename, Config &config);
 void initDefaultConfig(const String filename, Config &config);
-void loadRoutes(Message &message, Config &config);
 void connectWifi();
 void tick();
 void setPins();
@@ -80,25 +80,25 @@ void configModeCallback (WiFiManager *myWiFiManager);
 void initConfigManager(Config &config);
 void configManager(Config &config);
 
-// CAPTURE
-void arducamInit();
-void setCamResolution(int reso);
-void setFPM(int interv);
-void start_capture();
-void camCapture(ArduCAM myCAM, Message &message);
-void serverCapture(ArduCAM myCAM,  Message &message);
-void serverStream(ArduCAM myCAM,  Message &message);
-
 // MQTT
+#if MQTT_CLIENT == 1
 void generateMqttClientId(Config &config);
 void mqttInit(Config &config);
-void presentSensors(const char* objectId, const char* sensorId, const char* resourceId, const char* payload);
 void mqttError();
-boolean mqttConnect(Config &config);
 void mqttReconnect(Config &config);
 void mqttCallback(char* topic, byte* payload, unsigned int length);
-void parseMessage(Message &message);
+#endif
 
+// ALOES
+void setSensors(Config &config);
+void setSensorRoutes(Config &config, const char* objectId, const char* sensorId, const char* resourceId, size_t index);
+void presentSensors(Config &config);
+void setMessage(Message &message, char method[5], char* objectId, char* sensorId, char* resourceId, char* payload );
+void sendMessage(Config &config, Message &message );
+void parseMessage(Message &message);
+void parseTopic(Message &message, char* topic);
+
+// HTTP
 #if WEB_SERVER == 1
 void handleNotFound();
 #endif
@@ -109,6 +109,15 @@ void digitalClockDisplay();
 void printDigits(int digits);
 void sendNTPpacket(IPAddress &address);
 #endif
+
+// CAPTURE
+void arducamInit();
+void setCamResolution(int reso);
+void setFPM(int interv);
+void start_capture();
+void camCapture(ArduCAM myCAM);
+void serverCapture(ArduCAM myCAM);
+void serverStream(ArduCAM myCAM);
 
 void before() {
   Serial.begin(BAUD_RATE);
@@ -136,8 +145,7 @@ void before() {
     Serial.flush();
     delay(1000);
   }
-  setPins();
-  ticker.attach(1.5, tick);
+
   if (wifiResetConfig) { // add a button ?
     WiFiManager wifiManager;
     wifiManager.resetSettings();
@@ -177,12 +185,15 @@ void setup() {
   //    aSerial.vv().print(F("Wifi connected. IP Address : ")).println(WiFi.localIP());
   //    //getUpdated(int which, const char* url, const char* fingerprint);
   //  }
-  loadRoutes(message, config);
+
+  setPins();
+  setSensors(config);
+
+  ticker.attach(1.5, tick);
   connectWifi();
 #if MQTT_CLIENT == 1
   mqttInit(config);
 #endif
-  arducamInit();
   initConfigManager(config);
 #if NTP_SERVER == 1
   aSerial.vvv().println(F("Starting UDP"));
@@ -203,6 +214,9 @@ void setup() {
   aSerial.vvv().print(F("setup heap size : ")).println(ESP.getFreeHeap());
   ticker.detach();
   digitalWrite(STATE_LED, HIGH);
+
+  arducamInit();
+
   aSerial.v().println(F("====== Setup ended ======"));
 }
 
